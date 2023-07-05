@@ -455,13 +455,90 @@ def experiment_5(args):
     raise NotImplementedError
 
 
+def experiment_6(args):
+    """
+    Does grokking occur under random feature regression? We would guess not right but lets freeze the
+    first set of weights and see.
+
+    We begin by using the same arguments as provided in the cli
+    """
+
+    training_dataset = HiddenParityPrediction(
+        num_samples=args.num_samples,
+        sequence_length=args.sequence_length,
+        k=3,
+    )
+
+    number_training_samples = int(args.num_samples * 0.90909) + 1
+    number_validation_samples = args.num_samples - number_training_samples
+
+    # Split into training and validation should be 1000 and 100
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        training_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(
+        input_size=args.sequence_length,
+        hidden_layer_size=args.hidden_layer_size,
+        output_size=1,
+        random_seed=0,
+    )
+
+    # Freeze the first set of weights
+    model.freeze([1])
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        _,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        loss_function_label=args.loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+        progress_bar=True,
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_6/accuracy.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_6/loss.png"),
+    )
+
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
 
     argparser.add_argument(
         "--num_samples",
         type=int,
-        default=1000,
+        default=5500,
         help="Number of samples to generate for the dataset",
     )
 
@@ -497,7 +574,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--hidden_layer_size",
         type=int,
-        default=100,
+        default=1000,
         help="Size of the hidden layer in the network",
     )
 
@@ -513,7 +590,7 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--epochs", type=int, default=400, help="Number of epochs to train for"
+        "--epochs", type=int, default=500, help="Number of epochs to train for"
     )
 
     argparser.add_argument(
@@ -556,6 +633,9 @@ if __name__ == "__main__":
 
     if 4 in args.experiments:
         experiment_4(args)
+
+    if 6 in args.experiments:
+        experiment_6(args)
 
     if args.experiments != []:
         exit()

@@ -59,6 +59,20 @@ class TinyModel(nn.Module):
         else:
             raise ValueError("Invalid layer.")
 
+    def freeze(self, list_of_layers: list[int]) -> None:
+        """
+        Freezes layers in the model.
+        """
+
+        for layer in list_of_layers:
+            if layer == 1:
+                self.fc1.weight.requires_grad = False
+                self.fc1.bias.requires_grad = False
+            elif layer == 2:
+                self.fc2.weight.requires_grad = False
+            else:
+                raise ValueError("Invalid layer.")
+
     def forward(self, x):
         """
         Completes a forward pass of the network
