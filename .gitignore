@@ -1,2 +1,3 @@
 *.pdf
 job.sh
+*.pyc
