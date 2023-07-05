@@ -2,6 +2,7 @@ import torch
 import argparse
 import numpy as np
 from pathlib import Path
+import os
 
 from src.dataset import ParityPredictionDataset, HiddenParityPrediction
 from src.model import TinyModel
@@ -11,6 +12,7 @@ from src.plot import (
     plot_accuracies,
     plot_line_with_label,
     plot_list_of_lines_and_labels,
+    plot_heatmap,
 )
 from src.common import get_accuracy_on_dataset
 
@@ -295,8 +297,9 @@ def experiment_3(args):
     Here we are going to look at the sensitivity of grokking to the size of the underlying dataset.
     """
 
-    dataset_sizes = [220, 550, 770, 1100, 2200]
+    dataset_sizes = [220, 550, 770, 1100]
     binary_sequence_length = 40
+    epochs = 300
 
     # List of tuples of the form (training_accuracy, validation_accuracy, training_loss, validation_loss)
     list_of_results = []
@@ -339,7 +342,7 @@ def experiment_3(args):
             model=model,
             learning_rate=1e-1,
             weight_decay=1e-2,
-            epochs=400,
+            epochs=int(300 * (1000 / dataset_size)),
             batch_size=32,
             loss_function_label="hinge",
             optimiser_function_label="sgd",
@@ -375,11 +378,69 @@ def experiment_3(args):
             )
         )
 
+    print(lines_and_labels)
+
     plot_list_of_lines_and_labels(
         lines_and_labels=lines_and_labels,
         log=True,
         path=Path(f"experiments/experiment_3/accuracy_{dataset_size}.png"),
     )
+
+
+def experiment_4(args, retrain=False):
+    """
+    Look inside. Let's have a look at the first layer weights of the model,
+    saving them as a heatplot.
+    """
+
+    if os.path.exists("models/experiment_4.pt") and not retrain:
+        # Load the model
+        model = torch.load("models/experiment_4.pt")
+
+    else:
+        # Trains a basic model
+        dataset = HiddenParityPrediction(num_samples=1100, sequence_length=40, k=3)
+
+        train_dataset, validation_dataset = torch.utils.data.random_split(
+            dataset, [1000, 100]
+        )
+
+        model = TinyModel(
+            input_size=40,
+            hidden_layer_size=200,
+            output_size=1,
+            random_seed=0,
+        )
+
+        (
+            model,
+            training_losses,
+            validation_losses,
+            training_accuracy,
+            validation_accuracy,
+            _,
+        ) = train_model(
+            training_dataset=train_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=1e-1,
+            weight_decay=1e-2,
+            epochs=200,
+            batch_size=32,
+            loss_function_label="hinge",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        print(f"Final training accuracy: {training_accuracy[-1]}")
+        print(f"Final validation accuracy: {validation_accuracy[-1]}")
+
+        # Save the model
+        torch.save(model, "models/experiment_4.pt")
+
+    # Plot the weights
+    weights_of_layer_1 = model.look(1)
+    plot_heatmap(weights_of_layer_1)
 
 
 if __name__ == "__main__":
@@ -480,6 +541,9 @@ if __name__ == "__main__":
 
     if 3 in args.experiments:
         experiment_3(args)
+
+    if 4 in args.experiments:
+        experiment_4(args)
 
     if args.experiments != []:
         exit()

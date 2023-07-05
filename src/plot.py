@@ -3,6 +3,9 @@ from pathlib import Path
 
 from typing import Optional
 
+import numpy.typing as npt
+import numpy as np
+
 
 def plot_losses(
     training_losses: list[float],
@@ -64,7 +67,7 @@ def plot_list_of_lines_and_labels(
     Plots the training and validation accuracies.
     """
 
-    figure = plt.figure(dpi=200, figsize=(8, 6))
+    figure = plt.figure(dpi=200, figsize=(10, 6))
 
     if len(lines_and_labels[0]) == 2:
         for line, label in lines_and_labels:
@@ -77,5 +80,22 @@ def plot_list_of_lines_and_labels(
         plt.yscale("log")
         plt.xscale("log")
 
-    plt.legend()
+    # Legend at location bottom right
+    plt.legend(loc="lower right")
+
+    plt.savefig(path, bbox_inches="tight")
+
+
+def plot_heatmap(
+    data: npt.NDArray[np.float64],
+    path: Path = Path("experiments/experiment_4/heatmap.png"),
+) -> None:
+    """
+    Plots the training and validation accuracies.
+    """
+
+    figure = plt.figure(dpi=200, figsize=(10, 6))
+
+    plt.imshow(data, cmap="hot", interpolation="nearest", aspect="auto")
+    plt.colorbar()
     plt.savefig(path, bbox_inches="tight")

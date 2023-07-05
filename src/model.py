@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 
+import numpy.typing as npt
+import numpy as np
+
 
 class TinyModel(nn.Module):
     """
@@ -43,6 +46,18 @@ class TinyModel(nn.Module):
 
         if verbose:
             print(f"Model initialised on device: {self.device}")
+
+    def look(self, layer: int) -> npt.NDArray[np.float64]:
+        """
+        Looks inside the model weights producing
+        """
+
+        if layer == 1:
+            return self.fc1.weight.cpu().detach().numpy()
+        elif layer == 2:
+            return self.fc2.weight.cpu().detach().numpy()
+        else:
+            raise ValueError("Invalid layer.")
 
     def forward(self, x):
         """
