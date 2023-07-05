@@ -55,6 +55,7 @@ def plot_line_with_label(
 
 def plot_list_of_lines_and_labels(
     lines_and_labels: list[tuple[list[float], str]],
+    log: bool = False,
     path: Path = Path("all.pdf"),
 ) -> None:
     """
@@ -65,5 +66,10 @@ def plot_list_of_lines_and_labels(
 
     for line, label in lines_and_labels:
         plt.plot(line, label=label)
+    
+    if log:
+        plt.yscale("log")
+        plt.xscale("log")
+
     plt.legend()
     plt.savefig(path, bbox_inches="tight")

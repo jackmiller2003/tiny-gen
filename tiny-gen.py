@@ -1,8 +1,9 @@
 import torch
 import argparse
 import numpy as np
+from pathlib import Path
 
-from src.dataset import ParityPredictionDataset
+from src.dataset import ParityPredictionDataset, HiddenParityPrediction
 from src.model import TinyModel
 from src.train import train_model
 from src.plot import (
@@ -13,6 +14,82 @@ from src.plot import (
 )
 from src.common import get_accuracy_on_dataset
 
+def experiment_0(args):
+    """
+    Can we recover grokking from the original paper?
+    """
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    hidden_size = 1000
+    number_samples = 1100
+    epochs = 200
+
+    # Replicability
+    np.random.seed(0)
+
+    # Create the training dataset
+    entire_dataset = HiddenParityPrediction(
+        num_samples=number_samples,
+        sequence_length=40,
+        k=3,
+    )
+
+    # Split into training and validation should be 1000 and 100
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        entire_dataset, [int(number_samples*0.90909)+1, int(number_samples*0.09091)]
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(
+        input_size=40,
+        hidden_layer_size=hidden_size,
+        output_size=1,
+        random_seed=0,
+    )
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        _,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="hinge",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=True,
+        path=Path("accuracy.pdf")
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("loss.pdf")
+    )
 
 def experiment_1(args):
     """
@@ -137,18 +214,26 @@ def experiment_2(args):
     binary_sequence_length = 6
     k_factor_range = [2, 5]
     max_k_factor = 6
-    hidden_layer_size = 10000  # Overparameterised regime
+    hidden_layer_size = 1000  # Overparameterised regime
     epochs = 300
 
     total_sequence_length = max_k_factor + binary_sequence_length
 
     # Create the training dataset
-    training_dataset = ParityPredictionDataset(
+    entire_dataset = ParityPredictionDataset(
         num_samples=num_samples,
         sequence_length=binary_sequence_length,
         k_factor_range=k_factor_range,
         max_k_factor=max_k_factor,
     )
+
+    # Split into training and validation
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        entire_dataset, [int(num_samples*0.8), int(num_samples*0.2)]
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
 
     generalisation_dataset = ParityPredictionDataset(
         num_samples=round(num_samples / 10),
@@ -174,7 +259,7 @@ def experiment_2(args):
         generalisation_accuracy,
     ) = train_model(
         training_dataset=training_dataset,
-        validation_dataset=training_dataset,
+        validation_dataset=validation_dataset,
         model=model,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
@@ -281,6 +366,9 @@ if __name__ == "__main__":
     )
 
     args = argparser.parse_args()
+
+    if 0 in args.experiments:
+        experiment_0(args)
 
     if 1 in args.experiments:
         experiment_1(args)

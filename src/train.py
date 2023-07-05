@@ -68,9 +68,12 @@ def train_model(
         total_accuracy = 0
         number_batches = 0
 
+        # time_before_training = torch.cuda.Event(enable_timing=True)
+        # time_before_training.record()
+
         for batch in train_loader:
-            inputs = batch[0].contiguous().to(device, non_blocking=True)
-            targets = batch[1].contiguous().to(device, non_blocking=True)
+            inputs = batch[0].contiguous().to(device, non_blocking=False)
+            targets = batch[1].contiguous().to(device, non_blocking=False)
 
             predictions = model(inputs)
 
@@ -86,6 +89,11 @@ def train_model(
             loss.backward()
             optimiser.step()
 
+        # time_after_training = torch.cuda.Event(enable_timing=True)
+        # time_after_training.record()
+
+        # print(f"Epoch {epoch} with training took {time_before_training.elapsed_time(time_after_training)}ms")
+
         training_losses.append(total_loss / number_batches)
         training_accuracy.append(total_accuracy / number_batches)
 
@@ -93,11 +101,14 @@ def train_model(
         total_val_accuracy = 0
         number_val_batches = 0
 
+        # time_before_validation = torch.cuda.Event(enable_timing=True)
+        # time_before_validation.record()
+
         # Run validation loss
         with torch.no_grad():
             for batch in validation_loader:
-                inputs = batch[0].to(device)
-                targets = batch[1].to(device)
+                inputs = batch[0].to(device, non_blocking=False)
+                targets = batch[1].to(device, non_blocking=False)
 
                 predictions = model(inputs)
 
@@ -107,13 +118,26 @@ def train_model(
                 number_val_batches += 1
                 total_val_accuracy += get_accuracy(predictions, targets)
 
+        # time_after_validation = torch.cuda.Event(enable_timing=True)
+        # time_after_validation.record()
+
+        # print(f"Epoch {epoch} with validation took {time_before_validation.elapsed_time(time_after_validation)}ms")
+
         validation_losses.append(total_val_loss / number_val_batches)
         validation_accuracy.append(total_val_accuracy / number_val_batches)
+
+        # time_before_generalisation = torch.cuda.Event(enable_timing=True)
+        # time_before_generalisation.record()        
 
         if generalisation_dataset is not None:
             generalisation_accuracy.append(
                 get_accuracy_on_dataset(model, generalisation_dataset)
             )
+        
+        # time_after_generalisation = torch.cuda.Event(enable_timing=True)
+        # time_after_generalisation.record()
+
+        # print(f"Epoch {epoch} with generalisation took {time_before_generalisation.elapsed_time(time_after_generalisation)}ms")
 
     return (
         model,
