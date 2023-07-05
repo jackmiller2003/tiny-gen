@@ -15,5 +15,12 @@ Currently we use a feedforward neural network with a single hidden layer. The hi
 ## Experiments
 
 There are several experiments which have been conducted so far with the repository. These are:
-1. Generalisation with a normal model (1000 data points, 1000 parameters). See `ting-gen.py` for the code under `experiment_1`.
-2. Grokking with an over-parameterised model. We will we say OOD performance with an over-parameterised model given enough parameters. See `ting-gen.py` for the code under `experiment_2`.
+* Grokking under the original paper's parameters
+* Generalisation with a normal model (1000 data points, 1000 parameters). See `ting-gen.py` for the code under `experiment_1`.
+* Grokking with an over-parameterised model. We will we say OOD performance with an over-parameterised model given enough parameters. See `ting-gen.py` for the code under `experiment_2`.
+
+### Experiment 0
+
+In experiment 0 we look to recover the grokking from the original paper and here it is
+
+<center><img src="experimental_results/experiment_0/accuracy.png" alt="isolated" width="500"/></center>

@@ -83,7 +83,7 @@ def experiment_0(args):
             (validation_accuracy, "Validation accuracy"),
         ],
         log=True,
-        path=Path("accuracy.pdf"),
+        path=Path("accuracy.png"),
     )
 
     plot_list_of_lines_and_labels(
@@ -92,7 +92,7 @@ def experiment_0(args):
             (validation_losses, "Validation loss"),
         ],
         log=True,
-        path=Path("loss.pdf"),
+        path=Path("loss.png"),
     )
 
 
@@ -207,7 +207,7 @@ def experiment_1(args):
         x=[2, 3, 4, 5],
         y=average_accuracies,
         label="Average accuracy",
-        path=Path("experiments/experiment_1/average_accuracy.pdf"),
+        path=Path("experiments/experiment_1/average_accuracy.png"),
     )
 
 
@@ -378,7 +378,7 @@ def experiment_3(args):
     plot_list_of_lines_and_labels(
         lines_and_labels=lines_and_labels,
         log=True,
-        path=Path(f"experiments/experiment_3/accuracy_{dataset_size}.pdf"),
+        path=Path(f"experiments/experiment_3/accuracy_{dataset_size}.png"),
     )
 
 
