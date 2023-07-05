@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+from typing import Optional
+
 
 def plot_losses(
     training_losses: list[float],
@@ -54,7 +56,7 @@ def plot_line_with_label(
 
 
 def plot_list_of_lines_and_labels(
-    lines_and_labels: list[tuple[list[float], str]],
+    lines_and_labels: list[tuple[list[float], str, Optional[str]]],
     log: bool = False,
     path: Path = Path("all.pdf"),
 ) -> None:
@@ -64,9 +66,13 @@ def plot_list_of_lines_and_labels(
 
     figure = plt.figure(dpi=200, figsize=(8, 6))
 
-    for line, label in lines_and_labels:
-        plt.plot(line, label=label)
-    
+    if len(lines_and_labels[0]) == 2:
+        for line, label in lines_and_labels:
+            plt.plot(line, label=label)
+    elif len(lines_and_labels[0]) == 3:
+        for line, label, color in lines_and_labels:
+            plt.plot(line, label=label, color=color)
+
     if log:
         plt.yscale("log")
         plt.xscale("log")

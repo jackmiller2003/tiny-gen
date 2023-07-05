@@ -14,17 +14,20 @@ from src.plot import (
 )
 from src.common import get_accuracy_on_dataset
 
+
 def experiment_0(args):
     """
-    Can we recover grokking from the original paper?
+    Can we recover grokking from the original paper with an unkown k?
+
+    Yes we can!
     """
 
     weight_decay = 1e-2
     learning_rate = 1e-1
     batch_size = 32
     hidden_size = 1000
-    number_samples = 1100
-    epochs = 200
+    number_samples = 770
+    epochs = 400
 
     # Replicability
     np.random.seed(0)
@@ -38,7 +41,8 @@ def experiment_0(args):
 
     # Split into training and validation should be 1000 and 100
     training_dataset, validation_dataset = torch.utils.data.random_split(
-        entire_dataset, [int(number_samples*0.90909)+1, int(number_samples*0.09091)]
+        entire_dataset,
+        [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
     )
 
     print(f"Training dataset size: {len(training_dataset)}")
@@ -79,7 +83,7 @@ def experiment_0(args):
             (validation_accuracy, "Validation accuracy"),
         ],
         log=True,
-        path=Path("accuracy.pdf")
+        path=Path("accuracy.pdf"),
     )
 
     plot_list_of_lines_and_labels(
@@ -88,8 +92,9 @@ def experiment_0(args):
             (validation_losses, "Validation loss"),
         ],
         log=True,
-        path=Path("loss.pdf")
+        path=Path("loss.pdf"),
     )
+
 
 def experiment_1(args):
     """
@@ -198,7 +203,12 @@ def experiment_1(args):
 
     # Plot average accuracies
     # TODO: egh hard coded!
-    plot_line_with_label(x=[2, 3, 4, 5], y=average_accuracies, label="Average accuracy")
+    plot_line_with_label(
+        x=[2, 3, 4, 5],
+        y=average_accuracies,
+        label="Average accuracy",
+        path=Path("experiments/experiment_1/average_accuracy.pdf"),
+    )
 
 
 def experiment_2(args):
@@ -229,7 +239,7 @@ def experiment_2(args):
 
     # Split into training and validation
     training_dataset, validation_dataset = torch.utils.data.random_split(
-        entire_dataset, [int(num_samples*0.8), int(num_samples*0.2)]
+        entire_dataset, [int(num_samples * 0.8), int(num_samples * 0.2)]
     )
 
     print(f"Training dataset size: {len(training_dataset)}")
@@ -277,6 +287,98 @@ def experiment_2(args):
             (validation_accuracy, "Validation accuracy"),
             (generalisation_accuracy, "Generalisation accuracy"),
         ]
+    )
+
+
+def experiment_3(args):
+    """
+    Here we are going to look at the sensitivity of grokking to the size of the underlying dataset.
+    """
+
+    dataset_sizes = [220, 550, 770, 1100, 2200]
+    binary_sequence_length = 40
+
+    # List of tuples of the form (training_accuracy, validation_accuracy, training_loss, validation_loss)
+    list_of_results = []
+
+    for dataset_size in dataset_sizes:
+        entire_dataset = HiddenParityPrediction(
+            num_samples=dataset_size,
+            sequence_length=binary_sequence_length,
+            k=3,
+        )
+
+        # Split into training and validation should be 1000 and 100
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            entire_dataset,
+            [int(dataset_size * 0.90909) + 1, int(dataset_size * 0.09091)],
+        )
+
+        print(f"Training dataset size: {len(training_dataset)}")
+        print(f"Validation dataset size: {len(validation_dataset)}")
+
+        # Create the model
+        model = TinyModel(
+            input_size=40,
+            hidden_layer_size=1000,
+            output_size=1,
+            random_seed=0,
+        )
+
+        # Train the model
+        (
+            model,
+            training_losses,
+            validation_losses,
+            training_accuracy,
+            validation_accuracy,
+            _,
+        ) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=1e-1,
+            weight_decay=1e-2,
+            epochs=400,
+            batch_size=32,
+            loss_function_label="hinge",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        list_of_results.append(
+            (
+                training_accuracy,
+                validation_accuracy,
+                training_losses,
+                validation_losses,
+            )
+        )
+
+    lines_and_labels = []
+
+    colors = ["red", "blue", "green", "orange", "purple"]
+
+    for index, dataset_size in enumerate(dataset_sizes):
+        lines_and_labels.append(
+            (
+                list_of_results[index][0],
+                f"Training accuracy, dataset size {dataset_size}",
+                colors[index],
+            )
+        )
+        lines_and_labels.append(
+            (
+                list_of_results[index][1],
+                f"Validation accuracy, dataset size {dataset_size}",
+                colors[index],
+            )
+        )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=lines_and_labels,
+        log=True,
+        path=Path(f"experiments/experiment_3/accuracy_{dataset_size}.pdf"),
     )
 
 
@@ -338,7 +440,7 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--epochs", type=int, default=200, help="Number of epochs to train for"
+        "--epochs", type=int, default=400, help="Number of epochs to train for"
     )
 
     argparser.add_argument(
@@ -375,6 +477,9 @@ if __name__ == "__main__":
 
     if 2 in args.experiments:
         experiment_2(args)
+
+    if 3 in args.experiments:
+        experiment_3(args)
 
     if args.experiments != []:
         exit()
