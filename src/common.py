@@ -22,13 +22,14 @@ def get_accuracy_on_dataset(
 
     number_batches = 0
 
-    for batch in test_loader:
-        inputs, targets = batch
+    with torch.no_grad():
+        for batch in test_loader:
+            inputs, targets = batch
 
-        predictions = model(inputs)
+            predictions = model(inputs)
 
-        total_accuracy += get_accuracy(predictions, targets, verbose=verbose)
-        number_batches += 1
+            total_accuracy += get_accuracy(predictions, targets, verbose=verbose)
+            number_batches += 1
 
     return total_accuracy / number_batches
 

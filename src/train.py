@@ -2,7 +2,7 @@ import torch
 
 from src.dataset import ParityPredictionDataset
 from src.model import TinyModel, MyHingeLoss
-from src.common import get_accuracy
+from src.common import get_accuracy, get_accuracy_on_dataset
 
 from tqdm import tqdm
 
@@ -18,7 +18,8 @@ def train_model(
     loss_function_label: str,
     optimiser_function_label: str,
     progress_bar: bool = True,
-) -> tuple[TinyModel, list[float], list[float], list[float], list[float]]:
+    generalisation_dataset: ParityPredictionDataset = None,
+) -> tuple[TinyModel, list[float], list[float], list[float], list[float], list[float]]:
     """
     Function for training TinyModel.
 
@@ -54,6 +55,8 @@ def train_model(
 
     training_losses, training_accuracy = [], []
     validation_losses, validation_accuracy = [], []
+
+    generalisation_accuracy = []
 
     for epoch in tqdm(range(epochs), disable=not progress_bar):
         total_loss = 0
@@ -102,10 +105,16 @@ def train_model(
         validation_losses.append(total_val_loss / number_val_batches)
         validation_accuracy.append(total_val_accuracy / number_val_batches)
 
+        if generalisation_dataset is not None:
+            generalisation_accuracy.append(
+                get_accuracy_on_dataset(model, generalisation_dataset)
+            )
+
     return (
         model,
         training_losses,
         validation_losses,
         training_accuracy,
         validation_accuracy,
+        generalisation_accuracy,
     )

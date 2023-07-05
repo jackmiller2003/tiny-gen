@@ -34,6 +34,8 @@ class ParityPredictionDataset(Dataset):
         self.k_factor_range = k_factor_range
         self.max_k_factor = max_k_factor
 
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         self.generate_dataset()
 
     def generate_dataset(self) -> None:
@@ -45,7 +47,11 @@ class ParityPredictionDataset(Dataset):
 
         # Create random sequences of -1 and 1
         sequences = (
-            torch.randint(0, 2, size=(self.num_samples, self.sequence_length)) * 2 - 1
+            torch.randint(
+                0, 2, size=(self.num_samples, self.sequence_length), device=self.device
+            )
+            * 2
+            - 1
         )
 
         data_list = []
@@ -57,7 +63,7 @@ class ParityPredictionDataset(Dataset):
                 parity = torch.prod(sequence[:k_factor])
 
                 # Create a one-hot encoding of k_factor
-                k_factor_one_hot = torch.zeros(self.max_k_factor)
+                k_factor_one_hot = torch.zeros(self.max_k_factor, device=self.device)
                 k_factor_one_hot[k_factor - 1] = 1
 
                 sequence_with_prepended_k = torch.cat((k_factor_one_hot, sequence))

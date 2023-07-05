@@ -51,3 +51,19 @@ def plot_line_with_label(
     plt.plot(x, y, label=label)
     plt.legend()
     plt.savefig(path, bbox_inches="tight")
+
+
+def plot_list_of_lines_and_labels(
+    lines_and_labels: list[tuple[list[float], str]],
+    path: Path = Path("all.pdf"),
+) -> None:
+    """
+    Plots the training and validation accuracies.
+    """
+
+    figure = plt.figure(dpi=200, figsize=(8, 6))
+
+    for line, label in lines_and_labels:
+        plt.plot(line, label=label)
+    plt.legend()
+    plt.savefig(path, bbox_inches="tight")

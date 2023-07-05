@@ -5,7 +5,12 @@ import numpy as np
 from src.dataset import ParityPredictionDataset
 from src.model import TinyModel
 from src.train import train_model
-from src.plot import plot_losses, plot_accuracies, plot_line_with_label
+from src.plot import (
+    plot_losses,
+    plot_accuracies,
+    plot_line_with_label,
+    plot_list_of_lines_and_labels,
+)
 from src.common import get_accuracy_on_dataset
 
 
@@ -16,42 +21,46 @@ def experiment_1(args):
     I want to see at what point the network is able to generalise beyond
     the training data to complete the task of parity prediction.
 
-    To do this, we start with 5 random seeds and walk through the k ranges:
+    To do this, we start with 3 random seeds and walk through the k ranges:
     * [2,2]
     * [2,3]
     * [2,4]
     * [2,5]
 
     Then, we look at the test results on the generalisation dataset which goes from
-    k=6 to k=30. We use the default parameters for the network outside those changes
-    descirbed above.
+    k=6 to k=10. We will use a sequence length of 10.
     """
+
+    # Replicability
+    np.random.seed(0)
 
     average_accuracies = []
 
-    max_k_factor = 100
-    np.random.seed(0)
+    max_k_factor = 10
+    binary_sequence_length = 10
+
+    total_sequence_length = max_k_factor + binary_sequence_length
 
     generalisation_datasets = []
 
     # TODO: this method might be biased?
-    random_points = np.random.uniform(7, 100, 10)
+    random_points = np.random.uniform(6, max_k_factor, 1)
 
     for k_factor_sample in random_points:
         generalisation_datasets.append(
             ParityPredictionDataset(
                 num_samples=args.num_samples,
-                sequence_length=args.sequence_length,
+                sequence_length=binary_sequence_length,
                 k_factor_range=[int(k_factor_sample), int(k_factor_sample)],
                 max_k_factor=max_k_factor,
             )
         )
 
-    for k_range in [(2, 2), (2, 3), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8)]:
+    for k_range in [(2, 2), (2, 3), (2, 4), (2, 5)]:
         # Create the training dataset
         training_dataset = ParityPredictionDataset(
             num_samples=args.num_samples,
-            sequence_length=args.sequence_length,
+            sequence_length=binary_sequence_length,
             k_factor_range=k_range,
             max_k_factor=max_k_factor,
         )
@@ -64,7 +73,7 @@ def experiment_1(args):
 
             # Create the model
             model = TinyModel(
-                input_size=args.sequence_length + max_k_factor,
+                input_size=total_sequence_length,
                 hidden_layer_size=args.hidden_layer_size,
                 output_size=1,
                 random_seed=0,
@@ -77,6 +86,7 @@ def experiment_1(args):
                 validation_losses,
                 training_accuracy,
                 validation_accuracy,
+                _,
             ) = train_model(
                 training_dataset=training_dataset,
                 validation_dataset=training_dataset,
@@ -101,7 +111,7 @@ def experiment_1(args):
             average_accuracy += accuracy
 
             print(
-                f"Random seed: {random_seed_index}, k_range: {k_range}, accuracy: {accuracy}"
+                f"Random seed: {random_seed_index}, k_range: {k_range}, final_val_accuracy: {round(validation_accuracy[-1],2)}, accuracy: {accuracy}"
             )
 
         average_accuracy /= 3
@@ -111,8 +121,77 @@ def experiment_1(args):
 
     # Plot average accuracies
     # TODO: egh hard coded!
-    plot_line_with_label(
-        x=[2, 3, 4, 5, 6, 7, 8], y=average_accuracies, label="Average accuracy"
+    plot_line_with_label(x=[2, 3, 4, 5], y=average_accuracies, label="Average accuracy")
+
+
+def experiment_2(args):
+    """
+    The aim of this experiment is to determine whether we get grokking behaviour.
+
+    That is, train on k=2,3,4,5 and then at each epoch test on k=6. If we were to see
+    grokking then we would expect to see the accuracy on k=6 to increase drastically
+    at one point.
+    """
+
+    num_samples = 1000
+    binary_sequence_length = 6
+    k_factor_range = [2, 5]
+    max_k_factor = 6
+    hidden_layer_size = 10000  # Overparameterised regime
+    epochs = 1000
+
+    total_sequence_length = max_k_factor + binary_sequence_length
+
+    # Create the training dataset
+    training_dataset = ParityPredictionDataset(
+        num_samples=num_samples,
+        sequence_length=binary_sequence_length,
+        k_factor_range=k_factor_range,
+        max_k_factor=max_k_factor,
+    )
+
+    generalisation_dataset = ParityPredictionDataset(
+        num_samples=round(num_samples / 10),
+        sequence_length=binary_sequence_length,
+        k_factor_range=[max_k_factor, max_k_factor],
+        max_k_factor=max_k_factor,
+    )
+
+    # Create the model
+    model = TinyModel(
+        input_size=total_sequence_length,
+        hidden_layer_size=hidden_layer_size,
+        output_size=1,
+    )
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        generalisation_accuracy,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=training_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=epochs,
+        batch_size=args.batch_size,
+        loss_function_label=args.loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+        progress_bar=True,
+        generalisation_dataset=generalisation_dataset,
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+            (generalisation_accuracy, "Generalisation accuracy"),
+        ]
     )
 
 
@@ -129,7 +208,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--sequence_length",
         type=int,
-        default=3,
+        default=30,
         help="Length of the sequences to generate",
     )
 
@@ -158,7 +237,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--hidden_layer_size",
         type=int,
-        default=1000,
+        default=100,
         help="Size of the hidden layer in the network",
     )
 
@@ -206,6 +285,9 @@ if __name__ == "__main__":
     if 1 in args.experiments:
         experiment_1(args)
 
+    if 2 in args.experiments:
+        experiment_2(args)
+
     if args.experiments != []:
         exit()
 
@@ -236,6 +318,7 @@ if __name__ == "__main__":
         validation_losses,
         training_accuracy,
         validation_accuracy,
+        _,
     ) = train_model(
         training_dataset=train_dataset,
         validation_dataset=validation_dataset,

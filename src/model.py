@@ -36,9 +36,13 @@ class TinyModel(nn.Module):
         nn.init.xavier_uniform_(self.fc1.weight)
         nn.init.xavier_uniform_(self.fc2.weight)
 
+        # Determine if there is a GPU available and if so, move the model to GPU
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(self.device)
+
     def forward(self, x):
         """
-        Completes a forward pass of the newtork
+        Completes a forward pass of the network
         """
 
         x = torch.relu(self.fc1(x))
@@ -53,14 +57,12 @@ class MyHingeLoss(torch.nn.Module):
         super(MyHingeLoss, self).__init__()
 
     def forward(self, output, target):
-        # print(f"output: {torch.squeeze(output)}")
-        # print(f"target: {torch.squeeze(target)}")
+        # Ensure that the output and target tensors are on the same device
+        output = output.to(target.device)
+
         multiplied_vector = torch.mul(torch.squeeze(output), torch.squeeze(target))
-        # print(f"multiplied_vector: {multiplied_vector}")
 
         hinge_loss = 1 - multiplied_vector
         hinge_loss[hinge_loss < 0] = 0
-
-        # print(f"hinge_loss: {hinge_loss}")
 
         return hinge_loss.mean()
