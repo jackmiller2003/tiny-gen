@@ -22,9 +22,13 @@ def get_accuracy_on_dataset(
 
     number_batches = 0
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     with torch.no_grad():
         for batch in test_loader:
             inputs, targets = batch
+            inputs = inputs.to(device)
+            targets = targets.to(device)
 
             predictions = model(inputs)
 

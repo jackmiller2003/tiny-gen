@@ -32,12 +32,17 @@ def train_model(
     """
 
     train_loader = torch.utils.data.DataLoader(
-        dataset=training_dataset, batch_size=batch_size, shuffle=True
+        dataset=training_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True
     )
 
     validation_loader = torch.utils.data.DataLoader(
-        dataset=validation_dataset, batch_size=batch_size, shuffle=True
+        dataset=validation_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True
     )
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # Check what device the loader is on
+    # print(f"Training loader on device: {next(iter(train_loader))[0].device}")
 
     if loss_function_label == "hinge":
         loss_function = MyHingeLoss()
@@ -58,14 +63,14 @@ def train_model(
 
     generalisation_accuracy = []
 
-    for epoch in tqdm(range(epochs), disable=not progress_bar):
+    for epoch in tqdm(range(epochs), disable=not progress_bar, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
         total_loss = 0
         total_accuracy = 0
         number_batches = 0
 
         for batch in train_loader:
-            inputs = batch[0]
-            targets = batch[1]
+            inputs = batch[0].contiguous().to(device, non_blocking=True)
+            targets = batch[1].contiguous().to(device, non_blocking=True)
 
             predictions = model(inputs)
 
@@ -91,8 +96,8 @@ def train_model(
         # Run validation loss
         with torch.no_grad():
             for batch in validation_loader:
-                inputs = batch[0]
-                targets = batch[1]
+                inputs = batch[0].to(device)
+                targets = batch[1].to(device)
 
                 predictions = model(inputs)
 

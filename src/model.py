@@ -13,6 +13,7 @@ class TinyModel(nn.Module):
         hidden_layer_size: int,
         output_size: int,
         random_seed: int = 42,
+        verbose: bool = True,
     ) -> None:
         """
         Initialises network with parameters:
@@ -39,6 +40,9 @@ class TinyModel(nn.Module):
         # Determine if there is a GPU available and if so, move the model to GPU
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.to(self.device)
+
+        if verbose:
+            print(f"Model initialised on device: {self.device}")
 
     def forward(self, x):
         """

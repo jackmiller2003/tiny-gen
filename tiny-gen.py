@@ -137,8 +137,8 @@ def experiment_2(args):
     binary_sequence_length = 6
     k_factor_range = [2, 5]
     max_k_factor = 6
-    hidden_layer_size = 10000  # Overparameterised regime
-    epochs = 1000
+    hidden_layer_size = 100000  # Overparameterised regime
+    epochs = 200
 
     total_sequence_length = max_k_factor + binary_sequence_length
 
