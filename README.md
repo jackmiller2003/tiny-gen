@@ -37,3 +37,5 @@ How does grokking change with data size on this task?
 Do we see collapse into a sparse network? Yes we do!
 
 <center><img src="experiments/experiment_4/heatmap.png" alt="isolated" width="500"/></center>
+
+<center><img src="experiments/experiment_4/heatmap-2.png" alt="isolated" width="500"/></center>

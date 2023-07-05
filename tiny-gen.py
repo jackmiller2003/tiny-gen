@@ -439,8 +439,20 @@ def experiment_4(args, retrain=False):
         torch.save(model, "models/experiment_4.pt")
 
     # Plot the weights
-    weights_of_layer_1 = model.look(1)
-    plot_heatmap(weights_of_layer_1)
+    weights_of_layer_2 = model.look(2)
+    plot_heatmap(
+        weights_of_layer_2, path=Path("experiments/experiment_4/heatmap-2.png")
+    )
+
+
+def experiment_5(args):
+    """
+    This experiment involves `transplate-initialisation`. What happens when take a learned dense subnetwork
+    and transplant partials components of it into a new network? Does Grokking still occur? Likely not.
+    """
+
+    # Create a new model
+    raise NotImplementedError
 
 
 if __name__ == "__main__":
