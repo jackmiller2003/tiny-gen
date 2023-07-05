@@ -27,9 +27,9 @@ def experiment_0(args):
     weight_decay = 1e-2
     learning_rate = 1e-1
     batch_size = 32
-    hidden_size = 1000
-    number_samples = 770
-    epochs = 400
+    hidden_size = 200
+    number_samples = 1100
+    epochs = 200
 
     # Replicability
     np.random.seed(0)
@@ -77,6 +77,7 @@ def experiment_0(args):
         loss_function_label="hinge",
         optimiser_function_label="sgd",
         progress_bar=True,
+        save_weight_matrices=True,
     )
 
     plot_list_of_lines_and_labels(

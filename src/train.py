@@ -3,8 +3,11 @@ import torch
 from src.dataset import ParityPredictionDataset
 from src.model import TinyModel, MyHingeLoss
 from src.common import get_accuracy, get_accuracy_on_dataset
+from src.plot import plot_heatmap
 
 from tqdm import tqdm
+import os
+from pathlib import Path
 
 
 def train_model(
@@ -18,6 +21,7 @@ def train_model(
     loss_function_label: str,
     optimiser_function_label: str,
     progress_bar: bool = True,
+    save_weight_matrices: bool = False,
     generalisation_dataset: ParityPredictionDataset = None,
 ) -> tuple[TinyModel, list[float], list[float], list[float], list[float], list[float]]:
     """
@@ -32,11 +36,19 @@ def train_model(
     """
 
     train_loader = torch.utils.data.DataLoader(
-        dataset=training_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True
+        dataset=training_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
     )
 
     validation_loader = torch.utils.data.DataLoader(
-        dataset=validation_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True
+        dataset=validation_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -63,7 +75,11 @@ def train_model(
 
     generalisation_accuracy = []
 
-    for epoch in tqdm(range(epochs), disable=not progress_bar, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
+    for epoch in tqdm(
+        range(epochs),
+        disable=not progress_bar,
+        bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
+    ):
         total_loss = 0
         total_accuracy = 0
         number_batches = 0
@@ -127,13 +143,29 @@ def train_model(
         validation_accuracy.append(total_val_accuracy / number_val_batches)
 
         # time_before_generalisation = torch.cuda.Event(enable_timing=True)
-        # time_before_generalisation.record()        
+        # time_before_generalisation.record()
 
         if generalisation_dataset is not None:
             generalisation_accuracy.append(
                 get_accuracy_on_dataset(model, generalisation_dataset)
             )
-        
+
+        # Egh hard coded path...
+        if save_weight_matrices:
+            os.makedirs(f"experiments/0b/{epoch}", exist_ok=True)
+            weights_layer_1 = model.look(1)
+            weights_layer_2 = model.look(2)
+
+            plot_heatmap(
+                weights_layer_1,
+                path=Path(f"experiments/0b/{epoch}/weights_layer_1.png"),
+            )
+
+            plot_heatmap(
+                weights_layer_2,
+                path=Path(f"experiments/0b/{epoch}/weights_layer_2.png"),
+            )
+
         # time_after_generalisation = torch.cuda.Event(enable_timing=True)
         # time_after_generalisation.record()
 

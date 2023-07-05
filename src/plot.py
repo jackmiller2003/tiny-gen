@@ -99,3 +99,5 @@ def plot_heatmap(
     plt.imshow(data, cmap="hot", interpolation="nearest", aspect="auto")
     plt.colorbar()
     plt.savefig(path, bbox_inches="tight")
+
+    plt.close()
