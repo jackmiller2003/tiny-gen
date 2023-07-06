@@ -74,7 +74,6 @@ def train_model(
         for batch in train_loader:
             inputs = batch[0].contiguous().to(device, non_blocking=False)
             targets = batch[1].contiguous().to(device, non_blocking=False)
-
             predictions = model(inputs)
 
             loss = loss_function(predictions, targets)

@@ -40,10 +40,10 @@ def experiment_0(args):
     )
 
     # Split into training and validation should be 1000 and 100
+    train_size = int(0.90 * number_samples)
+    val_size = number_samples - train_size
     training_dataset, validation_dataset = torch.utils.data.random_split(
-        entire_dataset,
-        [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
-    )
+        entire_dataset, [train_size, val_size])
 
     print(f"Training dataset size: {len(training_dataset)}")
     print(f"Validation dataset size: {len(validation_dataset)}")
@@ -464,7 +464,7 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--experiments", type=int, nargs="+", default=[], help="Experiments to run"
+        "--experiments", type=int, nargs="+", default=[0], help="Experiments to run"
     )
 
     args = argparser.parse_args()
@@ -494,6 +494,9 @@ if __name__ == "__main__":
     train_dataset, validation_dataset, test_dataset = torch.utils.data.random_split(
         dataset, [0.7, 0.2, 0.1]
     )
+
+    print(len(train_dataset))
+    print(len(validation_dataset))      
 
     input_size = args.sequence_length + args.max_k_factor
 
