@@ -13,6 +13,6 @@ We currently maintain one mathematical task to analyse generalisation. The so-ca
 Experiment descriptions and the asociated code can be seen in `tiny-gen.py`. Their results can be seen in the `experiments` folder.
 
 A list of research questions:
-* Can we show on multiple Grokking datasets that feature-learning is required for Grokking.
+* Can we show on multiple Grokking datasets that feature-learning is required for Grokking?
 * Can we come up with an example where double grokking occurs? That is a model moves through an intermediate 'general' repsentation that's easier to learn but doesn't capture the full spectrum of the problem?
 * How does Grokking interact with limiting neural network depth?
