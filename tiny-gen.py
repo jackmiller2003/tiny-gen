@@ -4,8 +4,13 @@ import numpy as np
 from pathlib import Path
 import os
 
-from src.dataset import ParityPredictionDataset, HiddenParityPrediction
-from src.model import TinyModel
+from src.dataset import (
+    ParityPredictionDataset,
+    HiddenParityPrediction,
+    HiddenPeekParityPrediction,
+    ModularArithmeticTask,
+)
+from src.model import TinyModel, BigModel, ExpandableModel
 from src.train import train_model
 from src.plot import (
     plot_losses,
@@ -520,7 +525,9 @@ def experiment_6(args):
             (validation_accuracy, "Validation accuracy"),
         ],
         log=True,
-        path=Path("experiments/experiment_6/accuracy.png"),
+        path=Path(
+            "/scratch/kx58/jm0124/programs/tiny-gen/experiments/experiment_6/accuracy-long.png"
+        ),
     )
 
     plot_list_of_lines_and_labels(
@@ -529,7 +536,410 @@ def experiment_6(args):
             (validation_losses, "Validation loss"),
         ],
         log=True,
-        path=Path("experiments/experiment_6/loss.png"),
+        path=Path(
+            "/scratch/kx58/jm0124/programs/tiny-gen/experiments/experiment_6/loss-long.png"
+        ),
+    )
+
+
+def experiment_7(args):
+    """
+    In experiment 7 we look at the behaviour of the weights with a two-layer network and whether grokking still
+    occurs.
+    """
+
+    hidden_layer_1 = 100
+    hidden_layer_2 = 10
+
+    training_dataset = HiddenParityPrediction(
+        num_samples=args.num_samples,
+        sequence_length=args.sequence_length,
+        k=3,
+    )
+
+    number_training_samples = int(args.num_samples * 0.90909) + 1
+    number_validation_samples = args.num_samples - number_training_samples
+
+    # Split into training and validation should be 1000 and 100
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        training_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = BigModel(
+        input_size=args.sequence_length,
+        hidden_layer_sizes=[hidden_layer_1, hidden_layer_2],
+        output_size=1,
+        random_seed=0,
+    )
+
+    model.freeze([1])
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        _,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        loss_function_label=args.loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+        progress_bar=True,
+        weight_matrix_path=Path("experiments/experiment_7/weights"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_7/accuracy.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_7/loss.png"),
+    )
+
+
+def experiment_8(args):
+    """
+    It seemed that in experiment 7, the internal representation wasn't as clear as in previous grokking scenarios, likely due to
+    the presence of the random noise. In this experiment, I wonder if something like this will emerge:
+
+    sequence -> random feature -> clear randomness -> grokking pattern -> output
+
+    With a 3-layer network.
+    """
+
+    hidden_layer_size_1 = 100
+    hidden_layer_size_2 = 100
+    hidden_layer_size_3 = 100
+
+    training_dataset = HiddenParityPrediction(
+        num_samples=args.num_samples,
+        sequence_length=args.sequence_length,
+        k=3,
+    )
+
+    number_training_samples = int(args.num_samples * 0.90909) + 1
+    number_validation_samples = args.num_samples - number_training_samples
+
+    # Split into training and validation should be 1000 and 100
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        training_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+
+    # Create the model
+    model = ExpandableModel(
+        input_size=args.sequence_length,
+        hidden_layer_sizes=[
+            hidden_layer_size_1,
+            hidden_layer_size_2,
+            hidden_layer_size_3,
+        ],
+        output_size=1,
+    )
+
+    model.freeze([1])
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        _,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        loss_function_label=args.loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+        weight_matrix_path=Path("experiments/experiment_8/weights"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_8/accuracy.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_8/loss.png"),
+    )
+
+
+def experiment_9(args):
+    """
+    This experiment is designed to see if we can uncover a double grokking scenario. That is, the network shifts from:
+    confusion -> generalisation to some of the pattern -> full pattern
+
+    The dataset is the HiddenPeekParityPrediction which is instantiated in this case with the following behaviour.
+    If [1,1,-1] appears then the parity is calcualted with the first 4 elements of the sequence. Otherwise it is not.
+    """
+
+    hidden_layer_size = 200
+    k = 4
+    peek_condition = [1, 1, 1, -1]
+
+    training_dataset = HiddenPeekParityPrediction(
+        num_samples=args.num_samples,
+        sequence_length=args.sequence_length,
+        peek_condition=peek_condition,
+        k=k,
+    )
+
+    number_training_samples = int(args.num_samples * 0.4) + 1
+    number_validation_samples = args.num_samples - number_training_samples
+
+    # Split into training and validation should be 1000 and 100
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        training_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    indices_of_second_task = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][:k] == torch.tensor(peek_condition)).all()
+    ]
+
+    generalisation_dataset = torch.utils.data.Subset(
+        validation_dataset, indices_of_second_task
+    )
+
+    print(f"Generalisation dataset size: {len(generalisation_dataset)}")
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(
+        input_size=args.sequence_length,
+        hidden_layer_size=hidden_layer_size,
+        output_size=1,
+    )
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        generalisation_accuracy,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        loss_function_label=args.loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+        weight_matrix_path=Path("experiments/experiment_9/weights"),
+        generalisation_dataset=generalisation_dataset,
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+            (generalisation_accuracy, "Generalisation accuracy"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_9/accuracy.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_9/loss.png"),
+    )
+
+
+def experiment_10(args):
+    """
+    Grokking as competition between different parts of the network. To test this we will rate limit different components of the network
+    by freezing the weights at certain frequencies.
+    """
+
+    rate_limiting_tuples = [
+        [(1, 64), (1, 1)],
+        [(1, 32), (1, 1)],
+        # [(1, 8), (1, 1)],
+        # [(1, 4), (1, 1)],
+        # [(1, 2), (1, 1)],
+        # [(1, 1), (2, 1)],
+        # [(1, 1), (2, 2)],
+        # [(1, 1), (2, 4)],
+        # [(1, 1), (2, 8)],
+        # [(1, 1), (2, 16)],
+    ]
+
+    entire_dataset = HiddenParityPrediction(
+        num_samples=args.num_samples,
+        sequence_length=40,
+        k=3,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        entire_dataset,
+        [
+            int(args.num_samples * 0.90909) + 1,
+            int(args.num_samples * 0.09091),
+        ],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    for rate_limit in rate_limiting_tuples:
+        # Create the model
+        model = TinyModel(
+            input_size=40,
+            hidden_layer_size=200,
+            output_size=1,
+            random_seed=0,
+        )
+
+        print(f"Testing rate limit {rate_limit}")
+        (
+            model,
+            training_losses,
+            validation_losses,
+            training_accuracy,
+            validation_accuracy,
+            generalisation_accuracy,
+        ) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            loss_function_label=args.loss_function_label,
+            optimiser_function_label=args.optimiser_label,
+            rate_limit=rate_limit,
+        )
+
+        plot_list_of_lines_and_labels(
+            lines_and_labels=[
+                (training_accuracy, "Training accuracy"),
+                (validation_accuracy, "Validation accuracy"),
+            ],
+            log=True,
+            path=Path(
+                f"experiments/experiment_10/accuracy_{rate_limit[0]}_{rate_limit[1]}.png"
+            ),
+        )
+
+
+def experiment_11(args):
+    """
+    Can we reproduce grokking within modula arithmetic?
+    """
+
+    p = 7
+    num_samples = 440
+    epochs = 300
+    loss_function_label = "cross-entropy"
+    hidden_layer_size = 200
+
+    training_dataset = ModularArithmeticTask(num_samples=num_samples, p=p)
+
+    number_training_samples = int(num_samples * 0.90909) + 1
+    number_validation_samples = num_samples - number_training_samples
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        training_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(
+        input_size=2 * p, hidden_layer_size=hidden_layer_size, output_size=p
+    )
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        generalisation_accuracy,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=epochs,
+        batch_size=args.batch_size,
+        loss_function_label=loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=False,
+        path=Path(f"experiments/experiment_11/loss.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=False,
+        path=Path(f"experiments/experiment_11/accuracy.png"),
     )
 
 
@@ -620,23 +1030,8 @@ if __name__ == "__main__":
 
     args = argparser.parse_args()
 
-    if 0 in args.experiments:
-        experiment_0(args)
-
-    if 1 in args.experiments:
-        experiment_1(args)
-
-    if 2 in args.experiments:
-        experiment_2(args)
-
-    if 3 in args.experiments:
-        experiment_3(args)
-
-    if 4 in args.experiments:
-        experiment_4(args)
-
-    if 6 in args.experiments:
-        experiment_6(args)
+    for i in args.experiments:
+        eval("experiment_{}(args)".format(i))
 
     if args.experiments != []:
         exit()

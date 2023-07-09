@@ -1,6 +1,8 @@
 import torch
 from torch.utils.data import Dataset
 from typing import Tuple
+import random
+
 
 class ParityPredictionDataset(Dataset):
     """
@@ -48,11 +50,7 @@ class ParityPredictionDataset(Dataset):
         num_sequences = self.num_samples // self.num_k_factors
 
         sequences = (
-            torch.randint(
-                0, 2, size=(num_sequences, self.sequence_length)
-            )
-            * 2
-            - 1
+            torch.randint(0, 2, size=(num_sequences, self.sequence_length)) * 2 - 1
         )
 
         data_list = []
@@ -81,15 +79,16 @@ class ParityPredictionDataset(Dataset):
             if len(data_list) >= self.num_samples:
                 break
 
-        self.data = torch.stack(data_list)[:self.num_samples]
-        self.labels = torch.stack(label_list)[:self.num_samples]
+        self.data = torch.stack(data_list)[: self.num_samples]
+        self.labels = torch.stack(label_list)[: self.num_samples]
 
     def __len__(self):
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.data[idx], self.labels[idx]
-    
+
+
 class HiddenParityPrediction(Dataset):
     """
     In this parity prediction task the value of k is not given to the network.
@@ -102,7 +101,6 @@ class HiddenParityPrediction(Dataset):
         sequence_length: int,
         k: int,
     ):
-        
         self.num_samples = num_samples
         self.sequence_length = sequence_length
         self.k = k
@@ -117,11 +115,7 @@ class HiddenParityPrediction(Dataset):
 
         # Create random sequences of -1 and 1
         sequences = (
-            torch.randint(
-                0, 2, size=(self.num_samples, self.sequence_length)
-            )
-            * 2
-            - 1
+            torch.randint(0, 2, size=(self.num_samples, self.sequence_length)) * 2 - 1
         ).float()
 
         data_list = []
@@ -129,7 +123,7 @@ class HiddenParityPrediction(Dataset):
 
         for sequence in sequences:
             # Calculate the parity of the first k_factor elements
-            parity = torch.prod(sequence[:self.k])
+            parity = torch.prod(sequence[: self.k])
 
             data_list.append(sequence)
             label_list.append(parity)
@@ -137,7 +131,113 @@ class HiddenParityPrediction(Dataset):
         self.data = torch.stack(data_list)
         self.labels = torch.stack(label_list)
 
-    def __len__(self):
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.labels[idx]
+
+
+class HiddenPeekParityPrediction(Dataset):
+    """
+    This is similar to the parity prediction task. However, upon a certain set of
+    set of conditions, the network must peek at the (k+1)th value to determine
+    the parity.
+    """
+
+    def __init__(
+        self,
+        num_samples: int,
+        sequence_length: int,
+        peek_condition: list[int],
+        k: int,
+    ):
+        self.num_samples = num_samples
+        self.sequence_length = sequence_length
+        self.peek_condition = peek_condition
+        self.k = k
+
+        if len(peek_condition) != k:
+            raise ValueError("Peek condition must be the same length as k.")
+
+        self.generate_dataset()
+
+    def generate_dataset(self) -> None:
+        """
+        Generates the dataset by creating random sequences of -1 and 1
+        then assigns to each sequence the parity of the first k members
+        """
+
+        # Create random sequences of -1 and 1
+        sequences = (
+            torch.randint(0, 2, size=(self.num_samples, self.sequence_length)) * 2 - 1
+        ).float()
+
+        data_list = []
+        label_list = []
+
+        for sequence in sequences:
+            # Calculate the parity of the first k_factor elements
+            parity = torch.prod(sequence[: self.k])
+
+            if (sequence[: self.k] == torch.tensor(self.peek_condition)).all():
+                # Peek at the (k+1)th value
+                parity = parity * sequence[self.k + 1]
+
+            data_list.append(sequence)
+            label_list.append(parity)
+
+        self.data = torch.stack(data_list)
+        self.labels = torch.stack(label_list)
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.labels[idx]
+
+
+class ModularArithmeticTask(Dataset):
+    """
+    Modular arithmetic with a given prime p
+    """
+
+    def __init__(self, p: int, num_samples: int):
+        self.p = p
+        self.num_samples = num_samples
+
+        self.generate_dataset()
+
+    def generate_dataset(self):
+        """
+        Creates a dataset of example of modular arithmetic modulo p where
+        each number is encoded as a one-hot vector
+        """
+
+        data_list = []
+        label_list = []
+
+        for i in range(0, self.num_samples):
+            a = random.randint(0, self.p - 1)
+            b = random.randint(0, self.p - 1)
+
+            result = (a + b) % self.p
+
+            # Create a one-hot encoding of k_factor
+            sequence_one_hot = torch.zeros(self.p * 2)
+            sequence_one_hot[a] = 1
+            sequence_one_hot[self.p + b] = 1
+
+            result_one_hot = torch.zeros(self.p)
+            result_one_hot[result] = 1
+
+            data_list.append(sequence_one_hot)
+            label_list.append(result_one_hot)
+
+        self.data = torch.stack(data_list)
+        self.labels = torch.stack(label_list)
+
+    def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:

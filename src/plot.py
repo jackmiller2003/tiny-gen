@@ -78,7 +78,7 @@ def plot_list_of_lines_and_labels(
 
     if log:
         plt.yscale("log")
-        plt.xscale("log")
+        # plt.xscale("log")
 
     # Legend at location bottom right
     plt.legend(loc="lower right")

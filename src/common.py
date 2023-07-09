@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from src.dataset import ParityPredictionDataset
 from src.model import TinyModel
@@ -38,6 +39,7 @@ def get_accuracy_on_dataset(
     return total_accuracy / number_batches
 
 
+# TODO: this is horrible. Fix it.
 def get_accuracy(
     predictions: torch.Tensor, targets: torch.Tensor, verbose: bool = False
 ) -> float:
@@ -49,6 +51,20 @@ def get_accuracy(
         print(f"predictions: {torch.squeeze(predictions)}")
         print(f"targets: {targets}")
 
-    return float(
-        torch.mean((torch.sign(torch.squeeze(predictions)) == targets).float())
-    )
+    # Check the size of targets. If there is only one target per example, then
+    # return current. Otherwise, do a one-hot comparison with 0.5 as correct.
+
+    if len(targets[0]) == 1:
+        return float(
+            torch.mean((torch.sign(torch.squeeze(predictions)) == targets).float())
+        )
+    else:
+        predictions = F.softmax(predictions, dim=1)
+
+        return float(
+            torch.mean(
+                (
+                    torch.argmax(predictions, dim=1) == torch.argmax(targets, dim=1)
+                ).float()
+            )
+        )
