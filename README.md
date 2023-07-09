@@ -6,36 +6,25 @@ This repository contains code for a Toy Model of generalisation to test claims r
 
 We currently maintain one mathematical task to analyse generalisation. The so-called parity-prediction task.
 
-> Given a sequence $x$ of length $n$ and a k_factor $k$, predict the parity of the number of 1s in the sequence $x[:k]$ given knowledge of the sequence $x[:k]$ and the value of $k$.
+> Given a sequence $x$ of length $n$ and a k_factor $k$, predict the parity of the number of 1s in the sequence $x[:k]$ given knowledge of the sequence $x[:k]$ and possibly the value of $k$.
 
-## Models
+## Experiments & Future Questions
 
-Currently we use a feedforward neural network with a single hidden layer. The hidden layer has a ReLU activation function. The number of hidden units is a hyperparameter.
+Experiment descriptions and the asociated code can be seen in `tiny-gen.py`. Their results can be seen in the `experiments` folder.
 
-## Experiments
+A list of research questions:
+* Can we show on multiple Grokking datasets that feature-learning is required for Grokking?
+* Can we come up with an example where double grokking occurs? That is a model moves through an intermediate 'general' repsentation that's easier to learn but doesn't capture the full spectrum of the problem? This is currently being done under `experiment_9`
+* How does Grokking interact with limiting neural network depth?
 
-There are several experiments which have been conducted so far with the repository. These are:
-* Grokking under the original paper's parameters
-* Generalisation with a normal model (1000 data points, 1000 parameters). See `ting-gen.py` for the code under `experiment_1`.
-* Grokking with an over-parameterised model. We will we say OOD performance with an over-parameterised model given enough parameters. See `ting-gen.py` for the code under `experiment_2`.
-* Seeing grokking given different dataset sizes under the original problem formulation see `experiment_3`.
+## From Tegmark Paper...
 
-### Experiment 0
+Link: https://ericjmichaud.com/grokking-squared/
 
-In experiment 0 we look to recover the grokking from the original paper and here it is
+Quote: 
 
-<center><img src="experiments/experiment_0/accuracy.png" alt="isolated" width="500"/></center>
+_There is a difficult coordination problem that the "early layers" and the "late layers" have to solve for this special internal operation to be learned. In particular, if the "late layers" learn much faster than the "early layers", then they will quickly fit bad, random, approximately static representations (given by the "early layers" at initialization), resulting in overfitting. On the other hand, if the "early layers" learn much faster than the "late layers", then they will quickly find (weird) representations which when thrown through the bad, random, approximately static "later layers" will produce the desired outputs (inverting the "later layers"). This will also result in overfitting._
 
-### Experiment 3
+_Generalization requires that the "early layers" and "late layers" coordinate well. In the case of grokking, there is a coordination failure at first. The network learns unstructured representations and fits them. But it can't do this perfectly (the training loss is not exactly zero), giving some training signal for the "early layers" and "late layers" to work with. We suggest that the "later layers" will be less complex, and able to achieve lower loss, if they learn to perform something akin to the underlying binary operation._
 
-How does grokking change with data size on this task?
-
-<center><img src="experiments/experiment_3/accuracy_1100.png" alt="isolated" width="500"/></center>
-
-### Experiment 4
-
-Do we see collapse into a sparse network? Yes we do!
-
-<center><img src="experiments/experiment_4/heatmap.png" alt="isolated" width="500"/></center>
-
-<center><img src="experiments/experiment_4/heatmap-2.png" alt="isolated" width="500"/></center>
+I think we can test this by freezing the starting layers at a certain interval, artifically rate limiting various components of the network.
