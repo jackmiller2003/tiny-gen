@@ -3,3 +3,4 @@ job.sh
 jobs
 experiments/0b
 weights
+__pycache__

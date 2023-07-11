@@ -104,3 +104,50 @@ def plot_heatmap(
     plt.savefig(path, bbox_inches="tight")
 
     plt.close()
+
+
+def plot_validation_and_accuracy_from_observers(
+    observers: list[object], label_list: list, path: Path
+) -> None:
+    assert len(observers) == len(label_list)
+    assert len(observers) <= 5
+
+    colors = ["red", "blue", "green", "orange", "purple"]
+
+    loss_lists_and_labels = []
+    accuracy_lists_and_labels = []
+
+    for dataset_size, observer in zip(label_list, observers):
+        color = colors.pop()
+
+        loss_lists_and_labels.append(
+            (observer.training_losses, f"Training loss {dataset_size}", color)
+        )
+
+        loss_lists_and_labels.append(
+            (observer.validation_losses, f"Validation loss {dataset_size}", color)
+        )
+
+        accuracy_lists_and_labels.append(
+            (observer.training_accuracy, f"Training accuracy {dataset_size}", color)
+        )
+
+        accuracy_lists_and_labels.append(
+            (
+                observer.validation_accuracy,
+                f"Validation accuracy {dataset_size}",
+                color,
+            )
+        )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=loss_lists_and_labels,
+        log=True,
+        path=path / Path("loss.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=accuracy_lists_and_labels,
+        log=True,
+        path=path / Path("accuracy.png"),
+    )

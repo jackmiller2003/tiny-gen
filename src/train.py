@@ -2,7 +2,6 @@ import torch
 from torch.utils.data import Dataset
 import torch.nn as nn
 
-from src.dataset import ParityPredictionDataset
 from src.model import TinyModel, MyHingeLoss
 from src.common import get_accuracy, get_accuracy_on_dataset
 from src.plot import plot_list_of_lines_and_labels, plot_heatmap
@@ -41,6 +40,16 @@ class Observer:
         for name in self.generalisation_datasets.keys():
             self.generalisation_score[name] = []
 
+        for observation, setting in self.observation_settings.items():
+            if observation == "weight_norm":
+                layers = setting["layers"]
+                for layer in layers:
+                    self.weight_norms[layer] = []
+            elif observation == "weights":
+                layers = setting["layers"]
+                for layer in layers:
+                    self.weights[layer] = []
+
     def record_training_loss(self, loss: float) -> None:
         self.training_losses.append(loss)
 
@@ -75,17 +84,19 @@ class Observer:
                 [self.weights[layer].append(model.look(layer)) for layer in layers]
 
     def observe_generalisation(self, model: nn.Module) -> None:
-        for name, dataset in self.generalisation_datasets:
+        for name, dataset in self.generalisation_datasets.items():
             self.generalisation_score[name].append(
                 get_accuracy_on_dataset(model, dataset)
             )
 
-    def plot_me(self, path: Path, file_extension: str = ".png") -> None:
+    def plot_me(
+        self, path: Path, file_extension: str = ".png", log: bool = True
+    ) -> None:
         """
         Plots all of the observations the class has recorded.
         """
 
-        os.makedirs(path / "weights", exist_ok=True)
+        os.makedirs(path / Path("weights"), exist_ok=True)
 
         # --- Validation and training information --- #
 
@@ -94,8 +105,8 @@ class Observer:
                 (self.training_losses, "Training Loss"),
                 (self.validation_losses, "Validation Loss"),
             ],
-            path / "loss" + file_extension,
-            log=True,
+            path=path / Path("loss" + file_extension),
+            log=log,
         )
 
         plot_list_of_lines_and_labels(
@@ -103,8 +114,8 @@ class Observer:
                 (self.training_accuracy, "Training Accuracy"),
                 (self.validation_accuracy, "Validation Accuracy"),
             ],
-            path / "accuracy" + file_extension,
-            log=True,
+            path=path / Path("accuracy" + file_extension),
+            log=log,
         )
 
         # --- Weight information --- #
@@ -114,36 +125,39 @@ class Observer:
                 (norm_list, layer_number)
                 for layer_number, norm_list in self.weight_norms.items()
             ],
-            path / f"weight_norm" + file_extension,
-            log=True,
+            path=path / Path("weight_norm" + file_extension),
+            log=log,
         )
 
-        weight_matrix_frequency = self.observation_settings["weights"]["frequency"]
+        if "weights" in self.observation_settings:
+            weight_matrix_frequency = self.observation_settings["weights"]["frequency"]
 
         for layer_number, weight_list in self.weights.items():
             for weight_number, weight_matrix in enumerate(weight_list):
                 if weight_number % weight_matrix_frequency == 0:
                     plot_heatmap(
                         weight_matrix,
-                        path / f"weights/{layer_number}_{weight_number}"
-                        + file_extension,
+                        path=path
+                        / Path(
+                            f"weights/{layer_number}_{weight_number}" + file_extension
+                        ),
                     )
 
         # --- Generalisation information --- #
 
         plot_list_of_lines_and_labels(
             [
-                (name, generalisation_accuracy)
-                for name, generalisation_accuracy in self.generalisation_datasets.items()
+                (generalisation_accuracy, name)
+                for name, generalisation_accuracy in self.generalisation_score.items()
             ],
-            path / f"generalisation" + file_extension,
-            log=True,
+            path=path / Path("generalisation" + file_extension),
+            log=log,
         )
 
 
 def train_model(
-    training_dataset: ParityPredictionDataset,
-    validation_dataset: ParityPredictionDataset,
+    training_dataset: Dataset,
+    validation_dataset: Dataset,
     model: TinyModel,
     learning_rate: float,
     weight_decay: float,
