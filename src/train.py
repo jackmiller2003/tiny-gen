@@ -23,8 +23,8 @@ class Observer:
 
     def __init__(
         self,
-        observation_settings: dict,
-        generalisation_datasets: dict[str, Dataset] = None,
+        observation_settings: dict = {},
+        generalisation_datasets: dict[str, Dataset] = {},
     ):
         self.observation_settings = observation_settings
         self.generalisation_datasets = generalisation_datasets
@@ -53,24 +53,32 @@ class Observer:
     def record_validation_accuracy(self, accuracy: float) -> None:
         self.validation_accuracy.append(accuracy)
 
-    def observe_weights(self, weights: list[npt.NDArray[np.float64]]) -> None:
+    def observe_weights(self, model: nn.Module) -> None:
         """
         Observes various components of the weights based on specifications in
         the observations dictionary.
         """
 
+        # The model must have a look method which maps from layer number to weights
+        assert hasattr(model, "look")
+
         for observation, setting in self.observation_settings.items():
-            for i, layer in enumerate(weights):
-                if observation == "norm":
-                    self.weight_norms[i].append(np.linalg.norm(layer, p=2))
-                elif observation == "weights":
-                    self.weights[layer].append(layer)
-                else:
-                    raise ValueError("Invalid observation.")
+            if observation == "weight_norm":
+                layers = setting["layers"]
+                norms = [np.linalg.norm(model.look(layer), p=2) for layer in layers]
+                [
+                    self.weight_norms[layer].append(norm)
+                    for layer, norm in zip(layers, norms)
+                ]
+            elif observation == "weights":
+                layers = setting["layers"]
+                [self.weights[layer].append(model.look(layer)) for layer in layers]
 
     def observe_generalisation(self, model: nn.Module) -> None:
         for name, dataset in self.generalisation_datasets:
-            self.generalisation_score[name] = get_accuracy_on_dataset(model, dataset)
+            self.generalisation_score[name].append(
+                get_accuracy_on_dataset(model, dataset)
+            )
 
 
 def train_model(
@@ -84,11 +92,12 @@ def train_model(
     loss_function_label: str,
     optimiser_function_label: str,
     progress_bar: bool = True,
-    weight_matrix_path: Path = None,
-    generalisation_dataset: ParityPredictionDataset = None,
     rate_limit: list[tuple] = None,
-    activity_watcher: list[int] = None,
-) -> tuple[TinyModel, list[float], list[float], list[float], list[float], list[float]]:
+    observer: Observer = None,
+) -> tuple[nn.Module, Observer]:
+    if observer is None:
+        observer = Observer()
+
     train_loader = torch.utils.data.DataLoader(
         dataset=training_dataset,
         batch_size=batch_size,
@@ -126,47 +135,25 @@ def train_model(
     else:
         raise ValueError("Invalid optimiser.")
 
-    training_losses, training_accuracy = [], []
-    validation_losses, validation_accuracy = [], []
-
-    generalisation_accuracy = []
-
-    # Create a dictionary of the weight norms to watch
-    weight_norms = {}
-    for layer_number in activity_watcher:
-        weight_norms[layer_number] = []
-
     for epoch in tqdm(
         range(epochs),
         disable=not progress_bar,
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
     ):
-        total_loss = 0
-        total_accuracy = 0
-        number_batches = 0
+        total_loss = total_accuracy = number_batches = 0
 
         if rate_limit is not None:
-            # print(f"rate limit {rate_limit}")
             for layer, frequency in rate_limit:
                 if epoch % frequency == 0:
                     model.unfreeze([layer])
-                    print(
-                        f"Unfreezing layer {layer}, rate limit {frequency}, epoch {epoch}"
-                    )
                 else:
                     model.freeze([layer])
-                    print(
-                        f"Freezing layer {layer}, rate limit {frequency}, epoch {epoch}"
-                    )
 
         for batch in train_loader:
             inputs = batch[0].contiguous().to(device, non_blocking=False)
             targets = batch[1].contiguous().to(device, non_blocking=False)
 
             predictions = model(inputs)
-
-            # print(f"targets: {targets[:5]}")
-            # print(f"predictions: {predictions[:5]}")
 
             loss = loss_function(predictions, targets)
 
@@ -180,22 +167,11 @@ def train_model(
             loss.backward()
             optimiser.step()
 
-        # time_after_training = torch.cuda.Event(enable_timing=True)
-        # time_after_training.record()
+        observer.record_training_loss(total_loss / number_batches)
+        observer.record_training_accuracy(total_accuracy / number_batches)
 
-        # print(f"Epoch {epoch} with training took {time_before_training.elapsed_time(time_after_training)}ms")
+        total_val_loss = total_val_accuracy = number_val_batches = 0
 
-        training_losses.append(total_loss / number_batches)
-        training_accuracy.append(total_accuracy / number_batches)
-
-        total_val_loss = 0
-        total_val_accuracy = 0
-        number_val_batches = 0
-
-        # time_before_validation = torch.cuda.Event(enable_timing=True)
-        # time_before_validation.record()
-
-        # Run validation loss
         with torch.no_grad():
             for batch in validation_loader:
                 inputs = batch[0].to(device, non_blocking=False)
@@ -203,69 +179,16 @@ def train_model(
 
                 predictions = model(inputs)
 
-                # print(f"inputs: {inputs[:5]}")
-                # print(f"targets: {targets[:5]}")
-                # print(f"predictions: {predictions[:5]}")
-
                 validation_loss = loss_function(predictions, targets)
 
                 total_val_loss += float(validation_loss.item())
                 number_val_batches += 1
                 total_val_accuracy += get_accuracy(predictions, targets)
 
-        # time_after_validation = torch.cuda.Event(enable_timing=True)
-        # time_after_validation.record()
+        observer.record_validation_loss(total_val_loss / number_val_batches)
+        observer.record_validation_accuracy(total_val_accuracy / number_val_batches)
 
-        # print(f"Epoch {epoch} with validation took {time_before_validation.elapsed_time(time_after_validation)}ms")
+        observer.observe_generalisation(model)
+        observer.observe_weights()
 
-        validation_losses.append(total_val_loss / number_val_batches)
-        validation_accuracy.append(total_val_accuracy / number_val_batches)
-
-        # time_before_generalisation = torch.cuda.Event(enable_timing=True)
-        # time_before_generalisation.record()
-
-        if generalisation_dataset is not None:
-            generalisation_accuracy.append(
-                get_accuracy_on_dataset(model, generalisation_dataset)
-            )
-
-        # TODO: egh, the path addition is not using the library. Will also crash out if there aren't three layers!
-        if weight_matrix_path is not None and epoch % 10 == 0:
-            os.makedirs(f"{weight_matrix_path}/{epoch}", exist_ok=True)
-            weights_layer_1 = model.look(1)
-            weights_layer_2 = model.look(2)
-            # weights_layer_3 = model.look(3)
-
-            plot_heatmap(
-                weights_layer_1,
-                path=Path(f"{weight_matrix_path}/{epoch}/weights_layer_1.png"),
-            )
-
-            plot_heatmap(
-                weights_layer_2,
-                path=Path(f"{weight_matrix_path}/{epoch}/weights_layer_2.png"),
-            )
-
-            # plot_heatmap(
-            #     weights_layer_3,
-            #     path=Path(f"{weight_matrix_path}/{epoch}/weights_layer_3.png"),
-            # )
-
-        # time_after_generalisation = torch.cuda.Event(enable_timing=True)
-        # time_after_generalisation.record()
-
-        # print(f"Epoch {epoch} with generalisation took {time_before_generalisation.elapsed_time(time_after_generalisation)}ms")
-
-        # if activity_watcher is not None:
-        #     for layer in activity_watcher:
-        #         weight_norm = np.linalg.norm(model.look(layer), p=2)
-        #         weight_norms[layer].append(weight_norm)
-
-    return (
-        model,
-        training_losses,
-        validation_losses,
-        training_accuracy,
-        validation_accuracy,
-        generalisation_accuracy,
-    )
+    return (model, observer)
