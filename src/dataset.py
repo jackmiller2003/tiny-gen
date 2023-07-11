@@ -176,17 +176,24 @@ class ModuloAdditionTask(Dataset):
         Here a and b are one hot encoded.
         """
 
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
+
         for i in range(0, self.num_samples):
             a = random.randint(0, self.modulo - 1)
             b = random.randint(0, self.modulo - 1)
             c = (a + b) % self.modulo
-            self.data[i] = torch.cat(
-                (
-                    torch.nn.functional.one_hot(a, self.modulo),
-                    torch.nn.functional.one_hot(b, self.modulo),
-                )
-            )
-            self.targets[i] = torch.nn.functional.one_hot(c, self.modulo)
+
+            a_zeros = torch.zeros(self.modulo)
+            b_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
+
+            a_zeros[a] = 1
+            b_zeros[b] = 1
+            c_zeros[c] = 1
+
+            self.data[i] = torch.cat((a_zeros, b_zeros))
+            self.targets[i] = c_zeros
 
     def __len__(self) -> int:
         return self.num_samples
@@ -238,3 +245,63 @@ class HiddenDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.data[idx], self.targets[idx]
+
+
+def combine_datasets(
+    dataset1: Dataset, dataset2: Dataset, individual: bool = True
+) -> Dataset:
+    """
+    Combine two pytorch datasets such that the combined dataset has an
+    input space of input(dataset1) + input(dataset2) and an output
+    space of output(dataset1) + output(dataset2)
+
+    From GPT-4...
+    """
+    combined_data = []
+    combined_labels = []
+
+    if individual:
+        # Iterate over first dataset and add examples. Just pad with zeros
+        # for the second dataset.
+
+        total_input_zeros = len(dataset2[0][0]) + len(dataset1[0][0])
+        total_label_zeros = len(dataset2[0][1]) + len(dataset1[0][1])
+
+        for input, target in dataset1:
+            zeros = torch.zeros(total_input_zeros)
+            # print(f"input.shape: {input.shape}")
+            # print(f"zeros.shape: {zeros.shape}")
+            # print(zeros[: input.shape[0]])
+            zeros[: input.shape[0]] += input
+            combined_data.append(zeros)
+
+            zeros = torch.zeros(total_label_zeros)
+            zeros[: target.shape[0]] += target
+            combined_labels.append(zeros)
+
+        for inputs, targets in dataset2:
+            zeros = torch.zeros(total_input_zeros)
+            zeros[dataset1[0][0].shape[0] :] = inputs
+            combined_data.append(zeros)
+
+            zeros = torch.zeros(total_label_zeros)
+            zeros[dataset1[0][1].shape[0] :] = targets
+            combined_labels.append(zeros)
+
+        combined_data = torch.stack(combined_data)
+        combined_labels = torch.stack(combined_labels)
+
+    else:
+        assert len(dataset1) == len(dataset2)
+
+        for i in range(len(dataset1)):
+            data1, labels1 = dataset1[i]
+            data2, labels2 = dataset2[i]
+
+            combined_data.append(torch.cat((data1, data2)))
+            combined_labels.append(torch.cat((labels1, labels2)))
+
+        combined_data = torch.stack(combined_data)
+        combined_labels = torch.stack(combined_labels)
+
+    return TensorDataset(combined_data, combined_labels)

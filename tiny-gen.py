@@ -22,14 +22,16 @@ import numpy as np
 from pathlib import Path
 import os
 
-from src.dataset import ParityTask, HiddenDataset, PeekParityTask
+from src.dataset import (
+    ParityTask,
+    HiddenDataset,
+    PeekParityTask,
+    ModuloAdditionTask,
+    combine_datasets,
+)
 from src.model import TinyModel, ExpandableModel
 from src.train import train_model, Observer
 from src.plot import (
-    plot_losses,
-    plot_accuracies,
-    plot_line_with_label,
-    plot_list_of_lines_and_labels,
     plot_validation_and_accuracy_from_observers,
 )
 from src.common import get_accuracy_on_dataset
@@ -529,388 +531,410 @@ def experiment_rate_limiting(args):
         )
 
 
-# def experiment_11(args):
-#     """
-#     Can we reproduce grokking within modula arithmetic?
-#     """
+def experiment_grokking_on_modulo_arithmetic(args):
+    """
+    Can we reproduce grokking within modulo arithmetic?
+    """
 
-#     p = 4
-#     num_samples = 770
-#     epochs = 50
-#     loss_function_label = "cross-entropy"
-#     hidden_layer_size = 200
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    p = 29
+    input_size = p * 2
+    ouput_size = p
+    hidden_size = 1000
+    epochs = 500
+    number_training_samples = 1000
+    number_validation_samples = 400
+    random_seed = 0
 
-#     training_dataset = ModularArithmeticTask(num_samples=num_samples, p=p)
+    entire_dataset = ModuloAdditionTask(
+        num_samples=number_training_samples + number_validation_samples,
+        modulo=p,
+        random_seed=random_seed,
+    )
 
-#     number_training_samples = int(num_samples * 0.90909) + 1
-#     number_validation_samples = num_samples - number_training_samples
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        entire_dataset,
+        [number_training_samples, number_validation_samples],
+    )
 
-#     training_dataset, validation_dataset = torch.utils.data.random_split(
-#         training_dataset,
-#         [number_training_samples, number_validation_samples],
-#     )
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=ouput_size,
+        random_seed=random_seed,
+    )
 
-#     print(f"Training dataset size: {len(training_dataset)}")
-#     print(f"Validation dataset size: {len(validation_dataset)}")
+    observer = Observer(
+        observation_settings={"weights": {"frequency": 10, "layers": [1]}},
+    )
 
-#     # Create the model
-#     model = TinyModel(
-#         input_size=2 * p, hidden_layer_size=hidden_layer_size, output_size=p
-#     )
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
 
-#     # Train the model
-#     (
-#         model,
-#         training_losses,
-#         validation_losses,
-#         training_accuracy,
-#         validation_accuracy,
-#         generalisation_accuracy,
-#     ) = train_model(
-#         training_dataset=training_dataset,
-#         validation_dataset=validation_dataset,
-#         model=model,
-#         learning_rate=args.learning_rate,
-#         weight_decay=args.weight_decay,
-#         epochs=epochs,
-#         batch_size=args.batch_size,
-#         loss_function_label=loss_function_label,
-#         optimiser_function_label=args.optimiser_label,
-#         weight_matrix_path=Path("experiments/experiment_11/weights"),
-#     )
-
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_losses, "Training loss"),
-#             (validation_losses, "Validation loss"),
-#         ],
-#         log=False,
-#         path=Path(f"experiments/experiment_11/loss.png"),
-#     )
-
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_accuracy, "Training accuracy"),
-#             (validation_accuracy, "Validation accuracy"),
-#         ],
-#         log=False,
-#         path=Path(f"experiments/experiment_11/accuracy.png"),
-#     )
+    observer.plot_me(path=Path("experiments/grokking_on_modulo_arithmetic/"), log=False)
 
 
-# def experiment_12(args):
-#     """
-#     Can we reproduce grokking within modula arithmetic?
-#     """
+def experiment_combined_prediction(args):
+    """
+    Combined prediction task of both parity and modulo addition.
+    """
 
-#     p = 4
-#     total_sequnce_size = 40
-#     num_samples = 770
-#     epochs = 150
-#     loss_function_label = "cross-entropy"
-#     hidden_layer_size = 300
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    k = 3
+    p = 2
+    ouput_size = 2 + p
+    input_size = 80
+    hidden_size = 264
+    epochs = 200
+    number_training_samples = 2000
+    number_validation_samples = 200
+    random_seed = 0
 
-#     training_dataset = HiddenModularArithmeticTask(
-#         num_samples=num_samples, p=p, sequence_length=total_sequnce_size
-#     )
+    parity_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=0,
+    )
 
-#     number_training_samples = int(num_samples * 0.90909) + 1
-#     number_validation_samples = num_samples - number_training_samples
+    hidden_parity_dataset = HiddenDataset(
+        dataset=parity_dataset,
+        total_length=int(input_size / 2),
+        random_seed=0,
+    )
 
-#     training_dataset, validation_dataset = torch.utils.data.random_split(
-#         training_dataset,
-#         [number_training_samples, number_validation_samples],
-#     )
+    modulo_dataset = ModuloAdditionTask(
+        num_samples=number_training_samples + number_validation_samples,
+        modulo=p,
+        random_seed=0,
+    )
 
-#     print(f"Training dataset size: {len(training_dataset)}")
-#     print(f"Validation dataset size: {len(validation_dataset)}")
+    hidden_modulo_dataset = HiddenDataset(
+        dataset=modulo_dataset,
+        total_length=int(input_size / 2),
+        random_seed=0,
+    )
 
-#     # Create the model
-#     model = TinyModel(
-#         input_size=total_sequnce_size,
-#         hidden_layer_size=hidden_layer_size,
-#         output_size=p,
-#     )
+    combined_dataset = combine_datasets(
+        hidden_parity_dataset, hidden_modulo_dataset, individual=True
+    )
 
-#     # Train the model
-#     (
-#         model,
-#         training_losses,
-#         validation_losses,
-#         training_accuracy,
-#         validation_accuracy,
-#         generalisation_accuracy,
-#     ) = train_model(
-#         training_dataset=training_dataset,
-#         validation_dataset=validation_dataset,
-#         model=model,
-#         learning_rate=args.learning_rate,
-#         weight_decay=args.weight_decay,
-#         epochs=epochs,
-#         batch_size=args.batch_size,
-#         loss_function_label=loss_function_label,
-#         optimiser_function_label=args.optimiser_label,
-#         weight_matrix_path=Path("experiments/experiment_12/weights"),
-#     )
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        combined_dataset,
+        [2 * number_training_samples, 2 * number_validation_samples],
+    )
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_losses, "Training loss"),
-#             (validation_losses, "Validation loss"),
-#         ],
-#         log=False,
-#         path=Path(f"experiments/experiment_12/loss.png"),
-#     )
+    # Isolate the generalisation datasets
+    indices_of_parity_dataset = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][0 : int(input_size / 2)] == torch.zeros(int(input_size / 2))).all()
+    ]
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_accuracy, "Training accuracy"),
-#             (validation_accuracy, "Validation accuracy"),
-#         ],
-#         log=False,
-#         path=Path(f"experiments/experiment_12/accuracy.png"),
-#     )
+    print(f"Found {len(indices_of_parity_dataset)} samples in the parity dataset.")
 
+    parity_prediction_subset = torch.utils.data.Subset(
+        validation_dataset, indices_of_parity_dataset
+    )
 
-# def experiment_13(args):
-#     """
-#     Making sure we see grokking on the parity prediction task with cross entropy.
-#     """
+    indices_of_modulo_dataset = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][int(input_size / 2) :] == torch.zeros(int(input_size / 2))).all()
+    ]
 
-#     weight_decay = 1e-2
-#     learning_rate = 1e-1
-#     batch_size = 32
-#     hidden_size = 200
-#     number_samples = 1100
-#     epochs = 200
+    print(f"Found {len(indices_of_modulo_dataset)} samples in the modulo dataset.")
 
-#     # Create the training dataset
-#     entire_dataset = HiddenParityPrediction(
-#         num_samples=number_samples, sequence_length=40, k=3, for_cross_entropy=True
-#     )
+    modulo_prediction_subset = torch.utils.data.Subset(
+        validation_dataset, indices_of_modulo_dataset
+    )
 
-#     # Split into training and validation should be 1000 and 100
-#     training_dataset, validation_dataset = torch.utils.data.random_split(
-#         entire_dataset,
-#         [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
-#     )
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=ouput_size,
+        random_seed=random_seed,
+    )
 
-#     print(f"Training dataset size: {len(training_dataset)}")
-#     print(f"Validation dataset size: {len(validation_dataset)}")
+    observer = Observer(
+        observation_settings={"weights": {"frequency": 10, "layers": [1]}},
+        generalisation_datasets={
+            "parity": parity_prediction_subset,
+            "modulo": modulo_prediction_subset,
+        },
+    )
 
-#     # Create the model
-#     model = TinyModel(
-#         input_size=40,
-#         hidden_layer_size=hidden_size,
-#         output_size=2,
-#         random_seed=0,
-#     )
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
 
-#     # Train the model
-#     (
-#         model,
-#         training_losses,
-#         validation_losses,
-#         training_accuracy,
-#         validation_accuracy,
-#         _,
-#     ) = train_model(
-#         training_dataset=training_dataset,
-#         validation_dataset=validation_dataset,
-#         model=model,
-#         learning_rate=learning_rate,
-#         weight_decay=weight_decay,
-#         epochs=epochs,
-#         batch_size=batch_size,
-#         loss_function_label="cross-entropy",
-#         optimiser_function_label="sgd",
-#         progress_bar=True,
-#         weight_matrix_path=Path("experiments/experiment_13/weights"),
-#     )
-
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_accuracy, "Training accuracy"),
-#             (validation_accuracy, "Validation accuracy"),
-#         ],
-#         log=True,
-#         path=Path("experiments/experiment_13/accuracy.png"),
-#     )
-
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_losses, "Training loss"),
-#             (validation_losses, "Validation loss"),
-#         ],
-#         log=True,
-#         path=Path("experiments/experiment_13/loss.png"),
-#     )
+    observer.plot_me(path=Path("experiments/combined_prediction/"), log=False)
 
 
-# def experiment_14(args):
-#     """
-#     Combined prediction task.
-#     """
+def experiment_combined_prediction_constrained(args):
+    """
+    Same experiment as the combined prediction task but a continual reduction
+    in the hidden layer size.
 
-#     prime_dataset = HiddenModularArithmeticTask(
-#         num_samples=550, p=4, sequence_length=40
-#     )
+    Currently, not getting grokking but some interesting weight sharing
+    thing going on in 32.
+    """
 
-#     parity_dataset = HiddenParityPrediction(
-#         num_samples=1100, sequence_length=40, k=3, for_cross_entropy=True
-#     )
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    k = 3
+    p = 2
+    ouput_size = 2 + p
+    input_size = 80
+    hidden_size = 264
+    epochs = 200
+    number_training_samples = 2000
+    number_validation_samples = 200
+    random_seed = 0
 
-#     # Theoretically the output should require at most 2^8 + 2^3 = 256 + 8 = 264 bits.
+    parity_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=0,
+    )
 
-#     combined_dataset = combine_datasets(prime_dataset, parity_dataset)
+    hidden_parity_dataset = HiddenDataset(
+        dataset=parity_dataset,
+        total_length=int(input_size / 2),
+        random_seed=0,
+    )
 
-#     training_dataset, validation_dataset = torch.utils.data.random_split(
-#         combined_dataset,
-#         [int(1650 * 0.90909) + 1, int(1650 * 0.09091)],
-#     )
+    modulo_dataset = ModuloAdditionTask(
+        num_samples=number_training_samples + number_validation_samples,
+        modulo=p,
+        random_seed=0,
+    )
 
-#     print(f"Training dataset size: {len(training_dataset)}")
-#     print(f"Validation dataset size: {len(validation_dataset)}")
+    hidden_modulo_dataset = HiddenDataset(
+        dataset=modulo_dataset,
+        total_length=int(input_size / 2),
+        random_seed=0,
+    )
 
-#     # Create the model
-#     model = TinyModel(input_size=80, hidden_layer_size=264, output_size=4 + 2)
+    combined_dataset = combine_datasets(
+        hidden_parity_dataset, hidden_modulo_dataset, individual=True
+    )
 
-#     # Train the model
-#     (
-#         model,
-#         training_losses,
-#         validation_losses,
-#         training_accuracy,
-#         validation_accuracy,
-#         _,
-#     ) = train_model(
-#         training_dataset=training_dataset,
-#         validation_dataset=validation_dataset,
-#         model=model,
-#         learning_rate=1e-1,
-#         weight_decay=1e-2,
-#         epochs=400,
-#         batch_size=32,
-#         loss_function_label="cross-entropy",
-#         optimiser_function_label="sgd",
-#         progress_bar=True,
-#         weight_matrix_path=Path("experiments/experiment_14/weights"),
-#     )
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        combined_dataset,
+        [2 * number_training_samples, 2 * number_validation_samples],
+    )
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_accuracy, "Training accuracy"),
-#             (validation_accuracy, "Validation accuracy"),
-#         ],
-#         log=True,
-#         path=Path("experiments/experiment_14/accuracy.png"),
-#     )
+    # Isolate the generalisation datasets
+    indices_of_parity_dataset = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][0 : int(input_size / 2)] == torch.zeros(int(input_size / 2))).all()
+    ]
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=[
-#             (training_losses, "Training loss"),
-#             (validation_losses, "Validation loss"),
-#         ],
-#         log=True,
-#         path=Path("experiments/experiment_14/loss.png"),
-#     )
+    print(f"Found {len(indices_of_parity_dataset)} samples in the parity dataset.")
+
+    parity_prediction_subset = torch.utils.data.Subset(
+        validation_dataset, indices_of_parity_dataset
+    )
+
+    indices_of_modulo_dataset = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][int(input_size / 2) :] == torch.zeros(int(input_size / 2))).all()
+    ]
+
+    print(f"Found {len(indices_of_modulo_dataset)} samples in the modulo dataset.")
+
+    modulo_prediction_subset = torch.utils.data.Subset(
+        validation_dataset, indices_of_modulo_dataset
+    )
+
+    hidden_sizes = [264, 256, 128, 64, 32]
+
+    for hidden_size in hidden_sizes:
+        print(f"Hidden size: {hidden_size}")
+
+        observer = Observer(
+            observation_settings={"weights": {"frequency": 10, "layers": [1]}},
+            generalisation_datasets={
+                "parity": parity_prediction_subset,
+                "modulo": modulo_prediction_subset,
+            },
+        )
+
+        model = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=ouput_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            observer=observer,
+        )
+
+        observer.plot_me(
+            path=Path(f"experiments/combined_prediction_constrained/{hidden_size}"),
+            log=False,
+        )
 
 
-# def experiment_15(args):
-#     """
-#     Pretty much a repeat of above but we continue to constrain the number of layers...
-#     """
+def experiment_combined_hidden_and_data_constrained(args):
+    """
+    Same experiment as the combined prediction task but a continual reduction
+    in the hidden layer size.
 
-#     prime_dataset = HiddenModularArithmeticTask(
-#         num_samples=550, p=4, sequence_length=40
-#     )
+    Currently, not getting grokking but some interesting weight sharing
+    thing going on in 32.
+    """
 
-#     parity_dataset = HiddenParityPrediction(
-#         num_samples=1100, sequence_length=40, k=3, for_cross_entropy=True
-#     )
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    k = 3
+    p = 2
+    ouput_size = 2 + p
+    input_size = 80
+    hidden_size = 264
+    epochs = 200
+    number_training_samples = 700
+    number_validation_samples = 200
+    random_seed = 0
 
-#     combined_dataset = combine_datasets(prime_dataset, parity_dataset)
+    parity_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=0,
+    )
 
-#     training_dataset, validation_dataset = torch.utils.data.random_split(
-#         combined_dataset,
-#         [int(1650 * 0.90909) + 1, int(1650 * 0.09091)],
-#     )
+    hidden_parity_dataset = HiddenDataset(
+        dataset=parity_dataset,
+        total_length=int(input_size / 2),
+        random_seed=0,
+    )
 
-#     print(f"Training dataset size: {len(training_dataset)}")
-#     print(f"Validation dataset size: {len(validation_dataset)}")
+    modulo_dataset = ModuloAdditionTask(
+        num_samples=number_training_samples + number_validation_samples,
+        modulo=p,
+        random_seed=0,
+    )
 
-#     hidden_layer_sizes = [264, 256, 128, 64, 32]
+    hidden_modulo_dataset = HiddenDataset(
+        dataset=modulo_dataset,
+        total_length=int(input_size / 2),
+        random_seed=0,
+    )
 
-#     training_accuracies = []
-#     validation_accuracies = []
-#     training_losses_all = []
-#     validation_losses_all = []
+    combined_dataset = combine_datasets(
+        hidden_parity_dataset, hidden_modulo_dataset, individual=True
+    )
 
-#     for hidden_layer_size in hidden_layer_sizes:
-#         # Create the model
-#         model = TinyModel(
-#             input_size=80, hidden_layer_size=hidden_layer_size, output_size=4 + 2
-#         )
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        combined_dataset,
+        [2 * number_training_samples, 2 * number_validation_samples],
+    )
 
-#         # Train the model
-#         (
-#             model,
-#             training_losses,
-#             validation_losses,
-#             training_accuracy,
-#             validation_accuracy,
-#             _,
-#         ) = train_model(
-#             training_dataset=training_dataset,
-#             validation_dataset=validation_dataset,
-#             model=model,
-#             learning_rate=1e-1,
-#             weight_decay=1e-2,
-#             epochs=200,  # change to 200 epochs
-#             batch_size=32,
-#             loss_function_label="cross-entropy",
-#             optimiser_function_label="sgd",
-#             progress_bar=True,
-#             weight_matrix_path=Path(
-#                 f"experiments/experiment_15/weights/{hidden_layer_size}"
-#             ),
-#         )
+    # Isolate the generalisation datasets
+    indices_of_parity_dataset = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][0 : int(input_size / 2)] == torch.zeros(int(input_size / 2))).all()
+    ]
 
-#         # Append the accuracy and losses to the lists
-#         training_accuracies.append(training_accuracy)
-#         validation_accuracies.append(validation_accuracy)
-#         training_losses_all.append(training_losses)
-#         validation_losses_all.append(validation_losses)
+    print(f"Found {len(indices_of_parity_dataset)} samples in the parity dataset.")
 
-#     # Plot accuracy
-#     lines_and_labels = [
-#         (acc, f"Training accuracy {size}")
-#         for acc, size in zip(training_accuracies, hidden_layer_sizes)
-#     ]
-#     lines_and_labels += [
-#         (acc, f"Validation accuracy {size}")
-#         for acc, size in zip(validation_accuracies, hidden_layer_sizes)
-#     ]
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=lines_and_labels,
-#         log=True,
-#         path=Path("experiments/experiment_15/accuracy.png"),
-#     )
+    parity_prediction_subset = torch.utils.data.Subset(
+        validation_dataset, indices_of_parity_dataset
+    )
 
-#     # Plot loss
-#     lines_and_labels = [
-#         (loss, f"Training loss {size}")
-#         for loss, size in zip(training_losses_all, hidden_layer_sizes)
-#     ]
-#     lines_and_labels += [
-#         (loss, f"Validation loss {size}")
-#         for loss, size in zip(validation_losses_all, hidden_layer_sizes)
-#     ]
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=lines_and_labels,
-#         log=True,
-#         path=Path("experiments/experiment_15/loss.png"),
-#     )
+    indices_of_modulo_dataset = [
+        i
+        for i, x in enumerate(validation_dataset)
+        if (x[0][int(input_size / 2) :] == torch.zeros(int(input_size / 2))).all()
+    ]
+
+    print(f"Found {len(indices_of_modulo_dataset)} samples in the modulo dataset.")
+
+    modulo_prediction_subset = torch.utils.data.Subset(
+        validation_dataset, indices_of_modulo_dataset
+    )
+
+    hidden_sizes = [264, 256, 128, 64, 32]
+
+    for hidden_size in hidden_sizes:
+        print(f"Hidden size: {hidden_size}")
+
+        observer = Observer(
+            observation_settings={"weights": {"frequency": 10, "layers": [1]}},
+            generalisation_datasets={
+                "parity": parity_prediction_subset,
+                "modulo": modulo_prediction_subset,
+            },
+        )
+
+        model = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=ouput_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            observer=observer,
+        )
+
+        observer.plot_me(
+            path=Path(
+                f"experiments/combined_hidden_and_data_constrained/{hidden_size}"
+            ),
+            log=False,
+        )
 
 
 # def experiment_16(args):
@@ -1186,84 +1210,6 @@ if __name__ == "__main__":
 
     args = argparser.parse_args()
 
-    for i in args.experiments:
-        eval("experiment_{}(args)".format(i))
-
-    if args.experiments != []:
-        exit()
-
-    dataset = ParityPredictionDataset(
-        num_samples=args.num_samples,
-        sequence_length=args.sequence_length,
-        k_factor_range=args.k_factor_range,
-        max_k_factor=args.max_k_factor,
-    )
-
-    train_dataset, validation_dataset, test_dataset = torch.utils.data.random_split(
-        dataset, [0.7, 0.2, 0.1]
-    )
-
-    input_size = args.sequence_length + args.max_k_factor
-
-    print(f"Using an input size of {input_size}")
-
-    model = TinyModel(
-        input_size=input_size,
-        hidden_layer_size=args.hidden_layer_size,
-        output_size=1,
-    )
-
-    (
-        model,
-        training_losses,
-        validation_losses,
-        training_accuracy,
-        validation_accuracy,
-        _,
-    ) = train_model(
-        training_dataset=train_dataset,
-        validation_dataset=validation_dataset,
-        model=model,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        loss_function_label=args.loss_function_label,
-        optimiser_function_label=args.optimiser_label,
-    )
-
-    if args.plot_loss:
-        plot_losses(
-            training_losses=training_losses, validation_losses=validation_losses
-        )
-
-    print(f"Final training loss: {training_losses[-1]}")
-    print(f"Final validation loss: {validation_losses[-1]}")
-
-    if args.plot_accuracy:
-        plot_accuracies(
-            training_accuracy=training_accuracy, validation_accuracy=validation_accuracy
-        )
-
-    print(f"Final training accuracy: {training_accuracy[-1]}")
-    print(f"Final validation accuracy: {validation_accuracy[-1]}")
-
-    # Test the model on a new dataset with the generalisation k factor
-
-    accuracies = []
-
-    for k_factor in range(
-        args.generalisation_k_factor[0], args.generalisation_k_factor[1] + 1
-    ):
-        # TODO: this is somewhat unclean. We should probably have a separate dataset for a single k.
-        generalisation_dataset = ParityPredictionDataset(
-            num_samples=args.num_samples,
-            sequence_length=args.sequence_length,
-            k_factor_range=[k_factor, k_factor],
-            max_k_factor=args.max_k_factor,
-        )
-
-        accuracy = get_accuracy_on_dataset(model, generalisation_dataset)
-        accuracies.append(accuracy)
-
-    print(f"Generalisation accuracies: {accuracies}")
+    for experiment_name in args.experiments:
+        os.makedirs("experiments/experiment_name/", exist_ok=True)
+        eval("experiment_{}(args)".format(experiment_name))
