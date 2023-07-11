@@ -1,4 +1,6 @@
 import torch
+from torch.utils.data import Dataset
+import torch.nn as nn
 
 from src.dataset import ParityPredictionDataset
 from src.model import TinyModel, MyHingeLoss
@@ -10,6 +12,65 @@ import os
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
+
+
+class Observer:
+    """
+    Class for watching model training which is initialised with relevant components to record
+    different parts of training.
+    """
+
+    def __init__(
+        self,
+        observation_settings: dict,
+        generalisation_datasets: dict[str, Dataset] = None,
+    ):
+        self.observation_settings = observation_settings
+        self.generalisation_datasets = generalisation_datasets
+
+        self.training_losses = []
+        self.validation_losses = []
+        self.training_accuracy = []
+        self.validation_accuracy = []
+
+        self.weight_norms = {}
+        self.weights = {}
+        self.generalisation_score = {}
+
+        for name in self.generalisation_datasets.keys():
+            self.generalisation_score[name] = []
+
+    def record_training_loss(self, loss: float) -> None:
+        self.training_losses.append(loss)
+
+    def record_validation_loss(self, loss: float) -> None:
+        self.validation_losses.append(loss)
+
+    def record_training_accuracy(self, accuracy: float) -> None:
+        self.training_accuracy.append(accuracy)
+
+    def record_validation_accuracy(self, accuracy: float) -> None:
+        self.validation_accuracy.append(accuracy)
+
+    def observe_weights(self, weights: list[npt.NDArray[np.float64]]) -> None:
+        """
+        Observes various components of the weights based on specifications in
+        the observations dictionary.
+        """
+
+        for observation, setting in self.observation_settings.items():
+            for i, layer in enumerate(weights):
+                if observation == "norm":
+                    self.weight_norms[i].append(np.linalg.norm(layer, p=2))
+                elif observation == "weights":
+                    self.weights[layer].append(layer)
+                else:
+                    raise ValueError("Invalid observation.")
+
+    def observe_generalisation(self, model: nn.Module) -> None:
+        for name, dataset in self.generalisation_datasets:
+            self.generalisation_score[name] = get_accuracy_on_dataset(model, dataset)
 
 
 def train_model(
