@@ -5,7 +5,7 @@ import torch.nn as nn
 from src.dataset import ParityPredictionDataset
 from src.model import TinyModel, MyHingeLoss
 from src.common import get_accuracy, get_accuracy_on_dataset
-from src.plot import plot_heatmap
+from src.plot import plot_list_of_lines_and_labels, plot_heatmap
 
 from tqdm import tqdm
 import os
@@ -79,6 +79,66 @@ class Observer:
             self.generalisation_score[name].append(
                 get_accuracy_on_dataset(model, dataset)
             )
+
+    def plot_me(self, path: Path, file_extension: str = ".png") -> None:
+        """
+        Plots all of the observations the class has recorded.
+        """
+
+        os.makedirs(path / "weights", exist_ok=True)
+
+        # --- Validation and training information --- #
+
+        plot_list_of_lines_and_labels(
+            [
+                (self.training_losses, "Training Loss"),
+                (self.validation_losses, "Validation Loss"),
+            ],
+            path / "loss" + file_extension,
+            log=True,
+        )
+
+        plot_list_of_lines_and_labels(
+            [
+                (self.training_accuracy, "Training Accuracy"),
+                (self.validation_accuracy, "Validation Accuracy"),
+            ],
+            path / "accuracy" + file_extension,
+            log=True,
+        )
+
+        # --- Weight information --- #
+
+        plot_list_of_lines_and_labels(
+            [
+                (norm_list, layer_number)
+                for layer_number, norm_list in self.weight_norms.items()
+            ],
+            path / f"weight_norm" + file_extension,
+            log=True,
+        )
+
+        weight_matrix_frequency = self.observation_settings["weights"]["frequency"]
+
+        for layer_number, weight_list in self.weights.items():
+            for weight_number, weight_matrix in enumerate(weight_list):
+                if weight_number % weight_matrix_frequency == 0:
+                    plot_heatmap(
+                        weight_matrix,
+                        path / f"weights/{layer_number}_{weight_number}"
+                        + file_extension,
+                    )
+
+        # --- Generalisation information --- #
+
+        plot_list_of_lines_and_labels(
+            [
+                (name, generalisation_accuracy)
+                for name, generalisation_accuracy in self.generalisation_datasets.items()
+            ],
+            path / f"generalisation" + file_extension,
+            log=True,
+        )
 
 
 def train_model(
@@ -189,6 +249,6 @@ def train_model(
         observer.record_validation_accuracy(total_val_accuracy / number_val_batches)
 
         observer.observe_generalisation(model)
-        observer.observe_weights()
+        observer.observe_weights(model)
 
     return (model, observer)

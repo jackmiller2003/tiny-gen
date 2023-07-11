@@ -67,6 +67,9 @@ def plot_list_of_lines_and_labels(
     Plots the training and validation accuracies.
     """
 
+    if lines_and_labels == []:
+        return
+
     figure = plt.figure(dpi=200, figsize=(10, 6))
 
     if len(lines_and_labels[0]) == 2:
