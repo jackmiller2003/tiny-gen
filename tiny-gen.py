@@ -1261,6 +1261,192 @@ def experiment_15(args):
     )
 
 
+def experiment_16(args):
+    """
+    Looking at dependence of grokking on the random feature length.
+    """
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    hidden_size = 200
+    number_samples = 770
+    epochs = 100
+
+    training_loss_list = []
+    validation_loss_list = []
+    training_accuracies = []
+    validation_accuracies = []
+
+    sequence_lengths = [6, 10, 20, 40]
+
+    for sequence_length in sequence_lengths:
+        # Create the training dataset
+        entire_dataset = HiddenParityPrediction(
+            num_samples=number_samples,
+            sequence_length=sequence_length,
+            k=3,
+            for_cross_entropy=True,
+        )
+
+        training, validation = torch.utils.data.random_split(
+            entire_dataset,
+            [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
+        )
+
+        model = TinyModel(
+            input_size=sequence_length,
+            hidden_layer_size=hidden_size,
+            output_size=2,
+            random_seed=0,
+        )
+
+        # Train model
+        (
+            model,
+            training_losses,
+            validation_losses,
+            training_accuracy,
+            validation_accuracy,
+            _,
+        ) = train_model(
+            training_dataset=training,
+            validation_dataset=validation,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        training_accuracies.append(training_accuracy)
+        validation_accuracies.append(validation_accuracy)
+        training_loss_list.append(training_losses)
+        training_loss_list.append(validation_losses)
+
+    # Plot accuracy
+    lines_and_labels = [
+        (acc, f"Training accuracy {size}")
+        for acc, size in zip(training_accuracies, sequence_lengths)
+    ]
+
+    lines_and_labels.extend(
+        [
+            (acc, f"Validation accuracy {size}")
+            for acc, size in zip(validation_accuracies, sequence_lengths)
+        ]
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=lines_and_labels,
+        log=True,
+        path=Path("experiments/experiment_16/accuracy.png"),
+    )
+
+    # Plot loss
+    lines_and_labels = [
+        (loss, f"Training loss {size}")
+        for loss, size in zip(training_loss_list, sequence_lengths)
+    ]
+
+    lines_and_labels.extend(
+        [
+            (loss, f"Validation loss {size}")
+            for loss, size in zip(validation_loss_list, sequence_lengths)
+        ]
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=lines_and_labels,
+        log=True,
+        path=Path("experiments/experiment_16/loss.png"),
+    )
+
+
+def experiment_17(args):
+    """
+    Decrease the weight norm to get rid of grokking.
+    """
+
+    number_samples = 1100
+    sequence_length = 40
+    hidden_size = 200
+
+    entire_dataset = HiddenParityPrediction(
+        num_samples=number_samples,
+        sequence_length=sequence_length,
+        k=3,
+        for_cross_entropy=True,
+    )
+
+    training, validation = torch.utils.data.random_split(
+        entire_dataset,
+        [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
+    )
+
+    weight_norm_sizes = [1e-8, 1e-6]  # 1e-5, 1e-3, 1e-1, 1, 1e1]
+
+    training_accuracies = []
+    validation_accuracies = []
+
+    for weight_norm_size in weight_norm_sizes:
+        model = TinyModel(
+            input_size=sequence_length,
+            hidden_layer_size=hidden_size,
+            output_size=2,
+            random_seed=0,
+        )
+
+        # Multiply the weights by the weight norm size
+        for param in model.parameters():
+            param.data *= weight_norm_size
+
+        (
+            model,
+            training_losses,
+            validation_losses,
+            training_accuracy,
+            validation_accuracy,
+            _,
+        ) = train_model(
+            training_dataset=training,
+            validation_dataset=validation,
+            model=model,
+            learning_rate=1e-1,
+            weight_decay=1e-2,
+            epochs=500,
+            batch_size=32,
+            progress_bar=True,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+        )
+
+        training_accuracies.append(training_accuracy)
+        validation_accuracies.append(validation_accuracy)
+
+    # Plot accuracy
+    lines_and_labels = [
+        (acc, f"Training accuracy {size}")
+        for acc, size in zip(training_accuracies, weight_norm_sizes)
+    ]
+
+    lines_and_labels.extend(
+        [
+            (acc, f"Validation accuracy {size}")
+            for acc, size in zip(validation_accuracies, weight_norm_sizes)
+        ]
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=lines_and_labels,
+        log=True,
+        path=Path("experiments/experiment_17/accuracy-small.png"),
+    )
+
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
 

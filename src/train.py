@@ -9,6 +9,8 @@ from tqdm import tqdm
 import os
 from pathlib import Path
 
+import numpy as np
+
 
 def train_model(
     training_dataset: ParityPredictionDataset,
@@ -24,18 +26,8 @@ def train_model(
     weight_matrix_path: Path = None,
     generalisation_dataset: ParityPredictionDataset = None,
     rate_limit: list[tuple] = None,
+    activity_watcher: list[int] = None,
 ) -> tuple[TinyModel, list[float], list[float], list[float], list[float], list[float]]:
-    """
-    Function for training TinyModel.
-
-    Returns
-        - model: TinyModel
-        - training_losses: list[float]
-        - validation_losses: list[float]
-        - training_accuracy: list[float]
-        - validation_accuracy: list[float]
-    """
-
     train_loader = torch.utils.data.DataLoader(
         dataset=training_dataset,
         batch_size=batch_size,
@@ -53,9 +45,6 @@ def train_model(
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    # Check what device the loader is on
-    # print(f"Training loader on device: {next(iter(train_loader))[0].device}")
 
     if loss_function_label == "hinge":
         print("Using hinge loss")
@@ -80,6 +69,11 @@ def train_model(
     validation_losses, validation_accuracy = [], []
 
     generalisation_accuracy = []
+
+    # Create a dictionary of the weight norms to watch
+    weight_norms = {}
+    for layer_number in activity_watcher:
+        weight_norms[layer_number] = []
 
     for epoch in tqdm(
         range(epochs),
@@ -200,6 +194,11 @@ def train_model(
         # time_after_generalisation.record()
 
         # print(f"Epoch {epoch} with generalisation took {time_before_generalisation.elapsed_time(time_after_generalisation)}ms")
+
+        # if activity_watcher is not None:
+        #     for layer in activity_watcher:
+        #         weight_norm = np.linalg.norm(model.look(layer), p=2)
+        #         weight_norms[layer].append(weight_norm)
 
     return (
         model,
