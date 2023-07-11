@@ -49,12 +49,12 @@ def get_accuracy(
 
     if verbose:
         print(f"predictions: {torch.squeeze(predictions)}")
-        print(f"targets: {targets}")
+        print(f"targets: {targets.shape}")
 
     # Check the size of targets. If there is only one target per example, then
     # return current. Otherwise, do a one-hot comparison with 0.5 as correct.
 
-    if len(targets[0]) == 1:
+    if len(targets.shape) == 1:
         return float(
             torch.mean((torch.sign(torch.squeeze(predictions)) == targets).float())
         )

@@ -58,10 +58,13 @@ def train_model(
     # print(f"Training loader on device: {next(iter(train_loader))[0].device}")
 
     if loss_function_label == "hinge":
+        print("Using hinge loss")
         loss_function = MyHingeLoss()
     elif loss_function_label == "mse":
+        print("Using mse loss")
         loss_function = torch.nn.MSELoss()
     elif loss_function_label == "cross-entropy":
+        print("Using cross-entropy loss")
         loss_function = torch.nn.CrossEntropyLoss()
     else:
         raise ValueError("Invalid loss function.")
@@ -107,6 +110,9 @@ def train_model(
 
             predictions = model(inputs)
 
+            # print(f"targets: {targets[:5]}")
+            # print(f"predictions: {predictions[:5]}")
+
             loss = loss_function(predictions, targets)
 
             total_loss += loss.item()
@@ -141,6 +147,10 @@ def train_model(
                 targets = batch[1].to(device, non_blocking=False)
 
                 predictions = model(inputs)
+
+                # print(f"inputs: {inputs[:5]}")
+                # print(f"targets: {targets[:5]}")
+                # print(f"predictions: {predictions[:5]}")
 
                 validation_loss = loss_function(predictions, targets)
 

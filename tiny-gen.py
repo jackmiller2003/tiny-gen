@@ -9,6 +9,8 @@ from src.dataset import (
     HiddenParityPrediction,
     HiddenPeekParityPrediction,
     ModularArithmeticTask,
+    HiddenModularArithmeticTask,
+    combine_datasets,
 )
 from src.model import TinyModel, BigModel, ExpandableModel
 from src.train import train_model
@@ -33,7 +35,7 @@ def experiment_0(args):
     learning_rate = 1e-1
     batch_size = 32
     hidden_size = 200
-    number_samples = 1100
+    number_samples = 1500
     epochs = 200
 
     # Replicability
@@ -82,7 +84,7 @@ def experiment_0(args):
         loss_function_label="hinge",
         optimiser_function_label="sgd",
         progress_bar=True,
-        save_weight_matrices=True,
+        weight_matrix_path=Path("experiments/experiment_0/weights"),
     )
 
     plot_list_of_lines_and_labels(
@@ -91,7 +93,7 @@ def experiment_0(args):
             (validation_accuracy, "Validation accuracy"),
         ],
         log=True,
-        path=Path("accuracy.png"),
+        path=Path("experiments/experiment_0/accuracy.png"),
     )
 
     plot_list_of_lines_and_labels(
@@ -100,7 +102,7 @@ def experiment_0(args):
             (validation_losses, "Validation loss"),
         ],
         log=True,
-        path=Path("loss.png"),
+        path=Path("experiments/experiment_0/loss.png"),
     )
 
 
@@ -880,9 +882,9 @@ def experiment_11(args):
     Can we reproduce grokking within modula arithmetic?
     """
 
-    p = 7
-    num_samples = 440
-    epochs = 300
+    p = 4
+    num_samples = 770
+    epochs = 50
     loss_function_label = "cross-entropy"
     hidden_layer_size = 200
 
@@ -922,6 +924,7 @@ def experiment_11(args):
         batch_size=args.batch_size,
         loss_function_label=loss_function_label,
         optimiser_function_label=args.optimiser_label,
+        weight_matrix_path=Path("experiments/experiment_11/weights"),
     )
 
     plot_list_of_lines_and_labels(
@@ -940,6 +943,321 @@ def experiment_11(args):
         ],
         log=False,
         path=Path(f"experiments/experiment_11/accuracy.png"),
+    )
+
+
+def experiment_12(args):
+    """
+    Can we reproduce grokking within modula arithmetic?
+    """
+
+    p = 4
+    total_sequnce_size = 40
+    num_samples = 770
+    epochs = 150
+    loss_function_label = "cross-entropy"
+    hidden_layer_size = 300
+
+    training_dataset = HiddenModularArithmeticTask(
+        num_samples=num_samples, p=p, sequence_length=total_sequnce_size
+    )
+
+    number_training_samples = int(num_samples * 0.90909) + 1
+    number_validation_samples = num_samples - number_training_samples
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        training_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(
+        input_size=total_sequnce_size,
+        hidden_layer_size=hidden_layer_size,
+        output_size=p,
+    )
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        generalisation_accuracy,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        epochs=epochs,
+        batch_size=args.batch_size,
+        loss_function_label=loss_function_label,
+        optimiser_function_label=args.optimiser_label,
+        weight_matrix_path=Path("experiments/experiment_12/weights"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=False,
+        path=Path(f"experiments/experiment_12/loss.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=False,
+        path=Path(f"experiments/experiment_12/accuracy.png"),
+    )
+
+
+def experiment_13(args):
+    """
+    Making sure we see grokking on the parity prediction task with cross entropy.
+    """
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    hidden_size = 200
+    number_samples = 1100
+    epochs = 200
+
+    # Create the training dataset
+    entire_dataset = HiddenParityPrediction(
+        num_samples=number_samples, sequence_length=40, k=3, for_cross_entropy=True
+    )
+
+    # Split into training and validation should be 1000 and 100
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        entire_dataset,
+        [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(
+        input_size=40,
+        hidden_layer_size=hidden_size,
+        output_size=2,
+        random_seed=0,
+    )
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        _,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        weight_matrix_path=Path("experiments/experiment_13/weights"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_13/accuracy.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_13/loss.png"),
+    )
+
+
+def experiment_14(args):
+    """
+    Combined prediction task.
+    """
+
+    prime_dataset = HiddenModularArithmeticTask(
+        num_samples=550, p=4, sequence_length=40
+    )
+
+    parity_dataset = HiddenParityPrediction(
+        num_samples=1100, sequence_length=40, k=3, for_cross_entropy=True
+    )
+
+    # Theoretically the output should require at most 2^8 + 2^3 = 256 + 8 = 264 bits.
+
+    combined_dataset = combine_datasets(prime_dataset, parity_dataset)
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        combined_dataset,
+        [int(1650 * 0.90909) + 1, int(1650 * 0.09091)],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    # Create the model
+    model = TinyModel(input_size=80, hidden_layer_size=264, output_size=4 + 2)
+
+    # Train the model
+    (
+        model,
+        training_losses,
+        validation_losses,
+        training_accuracy,
+        validation_accuracy,
+        _,
+    ) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=1e-1,
+        weight_decay=1e-2,
+        epochs=400,
+        batch_size=32,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        weight_matrix_path=Path("experiments/experiment_14/weights"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_accuracy, "Training accuracy"),
+            (validation_accuracy, "Validation accuracy"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_14/accuracy.png"),
+    )
+
+    plot_list_of_lines_and_labels(
+        lines_and_labels=[
+            (training_losses, "Training loss"),
+            (validation_losses, "Validation loss"),
+        ],
+        log=True,
+        path=Path("experiments/experiment_14/loss.png"),
+    )
+
+
+def experiment_15(args):
+    """
+    Pretty much a repeat of above but we continue to constrain the number of layers...
+    """
+
+    prime_dataset = HiddenModularArithmeticTask(
+        num_samples=550, p=4, sequence_length=40
+    )
+
+    parity_dataset = HiddenParityPrediction(
+        num_samples=1100, sequence_length=40, k=3, for_cross_entropy=True
+    )
+
+    combined_dataset = combine_datasets(prime_dataset, parity_dataset)
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        combined_dataset,
+        [int(1650 * 0.90909) + 1, int(1650 * 0.09091)],
+    )
+
+    print(f"Training dataset size: {len(training_dataset)}")
+    print(f"Validation dataset size: {len(validation_dataset)}")
+
+    hidden_layer_sizes = [264, 256, 128, 64, 32]
+
+    training_accuracies = []
+    validation_accuracies = []
+    training_losses_all = []
+    validation_losses_all = []
+
+    for hidden_layer_size in hidden_layer_sizes:
+        # Create the model
+        model = TinyModel(
+            input_size=80, hidden_layer_size=hidden_layer_size, output_size=4 + 2
+        )
+
+        # Train the model
+        (
+            model,
+            training_losses,
+            validation_losses,
+            training_accuracy,
+            validation_accuracy,
+            _,
+        ) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=1e-1,
+            weight_decay=1e-2,
+            epochs=200,  # change to 200 epochs
+            batch_size=32,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            weight_matrix_path=Path(
+                f"experiments/experiment_15/weights/{hidden_layer_size}"
+            ),
+        )
+
+        # Append the accuracy and losses to the lists
+        training_accuracies.append(training_accuracy)
+        validation_accuracies.append(validation_accuracy)
+        training_losses_all.append(training_losses)
+        validation_losses_all.append(validation_losses)
+
+    # Plot accuracy
+    lines_and_labels = [
+        (acc, f"Training accuracy {size}")
+        for acc, size in zip(training_accuracies, hidden_layer_sizes)
+    ]
+    lines_and_labels += [
+        (acc, f"Validation accuracy {size}")
+        for acc, size in zip(validation_accuracies, hidden_layer_sizes)
+    ]
+    plot_list_of_lines_and_labels(
+        lines_and_labels=lines_and_labels,
+        log=True,
+        path=Path("experiments/experiment_15/accuracy.png"),
+    )
+
+    # Plot loss
+    lines_and_labels = [
+        (loss, f"Training loss {size}")
+        for loss, size in zip(training_losses_all, hidden_layer_sizes)
+    ]
+    lines_and_labels += [
+        (loss, f"Validation loss {size}")
+        for loss, size in zip(validation_losses_all, hidden_layer_sizes)
+    ]
+    plot_list_of_lines_and_labels(
+        lines_and_labels=lines_and_labels,
+        log=True,
+        path=Path("experiments/experiment_15/loss.png"),
     )
 
 
