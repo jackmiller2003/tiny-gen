@@ -937,190 +937,263 @@ def experiment_combined_hidden_and_data_constrained(args):
         )
 
 
-# def experiment_16(args):
-#     """
-#     Looking at dependence of grokking on the random feature length.
-#     """
+def experiment_dependence_on_random_length(args):
+    """
+    Looking at dependence of grokking on the random feature length, presumably
+    the longer the random features the more grokking.
 
-#     weight_decay = 1e-2
-#     learning_rate = 1e-1
-#     batch_size = 32
-#     hidden_size = 200
-#     number_samples = 770
-#     epochs = 100
+    We complete this experiment with:
+        * Modulo addition task
+        * Parity prediction task
+    """
 
-#     training_loss_list = []
-#     validation_loss_list = []
-#     training_accuracies = []
-#     validation_accuracies = []
+    os.makedirs("experiments/dependence_on_random_length/parity/", exist_ok=True)
+    os.makedirs("experiments/dependence_on_random_length/modulo/", exist_ok=True)
 
-#     sequence_lengths = [6, 10, 20, 40]
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    k = 6
+    p = 3
+    input_size = 6
+    hidden_size = 264
+    epochs = 100
+    number_training_samples = 700
+    number_validation_samples = 200
+    random_seed = 0
 
-#     for sequence_length in sequence_lengths:
-#         # Create the training dataset
-#         entire_dataset = HiddenParityPrediction(
-#             num_samples=number_samples,
-#             sequence_length=sequence_length,
-#             k=3,
-#             for_cross_entropy=True,
-#         )
+    parity_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
 
-#         training, validation = torch.utils.data.random_split(
-#             entire_dataset,
-#             [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
-#         )
+    modulo_dataset = ModuloAdditionTask(
+        num_samples=number_training_samples + number_validation_samples,
+        modulo=p,
+        random_seed=random_seed,
+    )
 
-#         model = TinyModel(
-#             input_size=sequence_length,
-#             hidden_layer_size=hidden_size,
-#             output_size=2,
-#             random_seed=0,
-#         )
+    random_feature_length = [6, 10, 20, 30]
 
-#         # Train model
-#         (
-#             model,
-#             training_losses,
-#             validation_losses,
-#             training_accuracy,
-#             validation_accuracy,
-#             _,
-#         ) = train_model(
-#             training_dataset=training,
-#             validation_dataset=validation,
-#             model=model,
-#             learning_rate=learning_rate,
-#             weight_decay=weight_decay,
-#             epochs=epochs,
-#             batch_size=batch_size,
-#             loss_function_label="cross-entropy",
-#             optimiser_function_label="sgd",
-#             progress_bar=True,
-#         )
+    parity_observers = []
+    modulo_observers = []
 
-#         training_accuracies.append(training_accuracy)
-#         validation_accuracies.append(validation_accuracy)
-#         training_loss_list.append(training_losses)
-#         training_loss_list.append(validation_losses)
+    for hidden_length in random_feature_length:
+        hidden_parity_dataset = HiddenDataset(
+            dataset=parity_dataset, total_length=hidden_length, random_seed=random_seed
+        )
 
-#     # Plot accuracy
-#     lines_and_labels = [
-#         (acc, f"Training accuracy {size}")
-#         for acc, size in zip(training_accuracies, sequence_lengths)
-#     ]
+        (
+            hidden_parity_training,
+            hidden_parity_validation,
+        ) = torch.utils.data.random_split(
+            hidden_parity_dataset,
+            [number_training_samples, number_validation_samples],
+        )
 
-#     lines_and_labels.extend(
-#         [
-#             (acc, f"Validation accuracy {size}")
-#             for acc, size in zip(validation_accuracies, sequence_lengths)
-#         ]
-#     )
+        hidden_modulo_dataset = HiddenDataset(
+            dataset=modulo_dataset, total_length=hidden_length, random_seed=random_seed
+        )
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=lines_and_labels,
-#         log=True,
-#         path=Path("experiments/experiment_16/accuracy.png"),
-#     )
+        (
+            hidden_modulo_training,
+            hidden_modulo_validation,
+        ) = torch.utils.data.random_split(
+            hidden_modulo_dataset,
+            [number_training_samples, number_validation_samples],
+        )
 
-#     # Plot loss
-#     lines_and_labels = [
-#         (loss, f"Training loss {size}")
-#         for loss, size in zip(training_loss_list, sequence_lengths)
-#     ]
+        parity_model = TinyModel(
+            input_size=hidden_length,
+            hidden_layer_size=hidden_size,
+            output_size=2,
+            random_seed=random_seed,
+        )
 
-#     lines_and_labels.extend(
-#         [
-#             (loss, f"Validation loss {size}")
-#             for loss, size in zip(validation_loss_list, sequence_lengths)
-#         ]
-#     )
+        modulo_model = TinyModel(
+            input_size=hidden_length,
+            hidden_layer_size=hidden_size,
+            output_size=p,
+            random_seed=random_seed,
+        )
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=lines_and_labels,
-#         log=True,
-#         path=Path("experiments/experiment_16/loss.png"),
-#     )
+        (parity_model, parity_observer) = train_model(
+            training_dataset=hidden_parity_training,
+            validation_dataset=hidden_parity_validation,
+            model=parity_model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        parity_observers.append(parity_observer)
+
+        (modulo_model, modulo_observer) = train_model(
+            training_dataset=hidden_modulo_training,
+            validation_dataset=hidden_modulo_validation,
+            model=modulo_model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        modulo_observers.append(modulo_observer)
+
+    plot_validation_and_accuracy_from_observers(
+        parity_observers,
+        random_feature_length,
+        Path("experiments/dependence_on_random_length/parity/"),
+    )
+    plot_validation_and_accuracy_from_observers(
+        modulo_observers,
+        random_feature_length,
+        Path("experiments/dependence_on_random_length/modulo/"),
+    )
 
 
-# def experiment_17(args):
-#     """
-#     Decrease the weight norm to get rid of grokking.
-#     """
+def experiment_dependence_on_weight_init(args):
+    """
+    We decrease the magntiude of initiasl weights to try and modify grokking.
 
-#     number_samples = 1100
-#     sequence_length = 40
-#     hidden_size = 200
+    This experiment relates to the paper https://arxiv.org/abs/2210.01117,
+    specifically figure 1b on page 2. If we haven't misunderstood, according
+    to that figure if we decrease the weight norm to be very small we should not
+    see grokking.
+    """
 
-#     entire_dataset = HiddenParityPrediction(
-#         num_samples=number_samples,
-#         sequence_length=sequence_length,
-#         k=3,
-#         for_cross_entropy=True,
-#     )
+    os.makedirs("experiments/dependence_on_weight_init/parity/", exist_ok=True)
+    os.makedirs("experiments/dependence_on_weight_init/modulo/", exist_ok=True)
 
-#     training, validation = torch.utils.data.random_split(
-#         entire_dataset,
-#         [int(number_samples * 0.90909) + 1, int(number_samples * 0.09091)],
-#     )
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    k = 3
+    p = 3
+    total_length = 40
+    hidden_size = 264
+    epochs = 100
+    number_training_samples = 700
+    number_validation_samples = 200
+    random_seed = 0
 
-#     weight_norm_sizes = [1e-8, 1e-6]  # 1e-5, 1e-3, 1e-1, 1, 1e1]
+    parity_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
 
-#     training_accuracies = []
-#     validation_accuracies = []
+    modulo_dataset = ModuloAdditionTask(
+        num_samples=number_training_samples + number_validation_samples,
+        modulo=p,
+        random_seed=random_seed,
+    )
 
-#     for weight_norm_size in weight_norm_sizes:
-#         model = TinyModel(
-#             input_size=sequence_length,
-#             hidden_layer_size=hidden_size,
-#             output_size=2,
-#             random_seed=0,
-#         )
+    weight_norm = [1e-8, 1e-6, 1e-4, 1e-2, 1, 1e2]
 
-#         # Multiply the weights by the weight norm size
-#         for param in model.parameters():
-#             param.data *= weight_norm_size
+    parity_observers = []
+    modulo_observers = []
 
-#         (
-#             model,
-#             training_losses,
-#             validation_losses,
-#             training_accuracy,
-#             validation_accuracy,
-#             _,
-#         ) = train_model(
-#             training_dataset=training,
-#             validation_dataset=validation,
-#             model=model,
-#             learning_rate=1e-1,
-#             weight_decay=1e-2,
-#             epochs=500,
-#             batch_size=32,
-#             progress_bar=True,
-#             loss_function_label="cross-entropy",
-#             optimiser_function_label="sgd",
-#         )
+    for weight_norm in weight_norm:
+        hidden_parity_dataset = HiddenDataset(
+            dataset=parity_dataset, total_length=total_length, random_seed=random_seed
+        )
 
-#         training_accuracies.append(training_accuracy)
-#         validation_accuracies.append(validation_accuracy)
+        (
+            hidden_parity_training,
+            hidden_parity_validation,
+        ) = torch.utils.data.random_split(
+            hidden_parity_dataset,
+            [number_training_samples, number_validation_samples],
+        )
 
-#     # Plot accuracy
-#     lines_and_labels = [
-#         (acc, f"Training accuracy {size}")
-#         for acc, size in zip(training_accuracies, weight_norm_sizes)
-#     ]
+        hidden_modulo_dataset = HiddenDataset(
+            dataset=modulo_dataset, total_length=total_length, random_seed=random_seed
+        )
 
-#     lines_and_labels.extend(
-#         [
-#             (acc, f"Validation accuracy {size}")
-#             for acc, size in zip(validation_accuracies, weight_norm_sizes)
-#         ]
-#     )
+        (
+            hidden_modulo_training,
+            hidden_modulo_validation,
+        ) = torch.utils.data.random_split(
+            hidden_modulo_dataset,
+            [number_training_samples, number_validation_samples],
+        )
 
-#     plot_list_of_lines_and_labels(
-#         lines_and_labels=lines_and_labels,
-#         log=True,
-#         path=Path("experiments/experiment_17/accuracy-small.png"),
-#     )
+        parity_model = TinyModel(
+            input_size=total_length,
+            hidden_layer_size=hidden_size,
+            output_size=2,
+            random_seed=random_seed,
+        )
+
+        # Multiply the weights by the weight norm size
+        for param in parity_model.parameters():
+            param.data *= weight_norm
+
+        modulo_model = TinyModel(
+            input_size=total_length,
+            hidden_layer_size=hidden_size,
+            output_size=p,
+            random_seed=random_seed,
+        )
+
+        for param in modulo_model.parameters():
+            param.data *= weight_norm
+
+        # Print the weight norms
+        print(
+            f"Weight norm parity: {torch.norm(next(parity_model.parameters()))},\
+                modulo: {torch.norm(next(modulo_model.parameters()))}"
+        )
+
+        (parity_model, parity_observer) = train_model(
+            training_dataset=hidden_parity_training,
+            validation_dataset=hidden_parity_validation,
+            model=parity_model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        parity_observers.append(parity_observer)
+
+        (modulo_model, modulo_observer) = train_model(
+            training_dataset=hidden_modulo_training,
+            validation_dataset=hidden_modulo_validation,
+            model=modulo_model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        modulo_observers.append(modulo_observer)
+
+    plot_validation_and_accuracy_from_observers(
+        parity_observers,
+        weight_norm,
+        Path("experiments/dependence_on_weight_init/parity/"),
+    )
+    plot_validation_and_accuracy_from_observers(
+        modulo_observers,
+        weight_norm,
+        Path("experiments/dependence_on_weight_init/modulo/"),
+    )
 
 
 if __name__ == "__main__":

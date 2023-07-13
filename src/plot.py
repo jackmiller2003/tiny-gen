@@ -59,7 +59,7 @@ def plot_line_with_label(
 
 
 def plot_list_of_lines_and_labels(
-    lines_and_labels: list[tuple[list[float], str, Optional[str]]],
+    lines_and_labels: list[tuple[list[float], str, Optional[str], Optional[str]]],
     log: bool = False,
     path: Path = Path("all.pdf"),
 ) -> None:
@@ -78,6 +78,9 @@ def plot_list_of_lines_and_labels(
     elif len(lines_and_labels[0]) == 3:
         for line, label, color in lines_and_labels:
             plt.plot(line, label=label, color=color)
+    elif len(lines_and_labels[0]) == 4:
+        for line, label, color, line_type in lines_and_labels:
+            plt.plot(line, label=label, color=color, linestyle=line_type)
 
     if log:
         plt.yscale("log")
@@ -121,15 +124,25 @@ def plot_validation_and_accuracy_from_observers(
         color = colors.pop()
 
         loss_lists_and_labels.append(
-            (observer.training_losses, f"Training loss {dataset_size}", color)
+            (observer.training_losses, f"Training loss {dataset_size}", color, "solid")
         )
 
         loss_lists_and_labels.append(
-            (observer.validation_losses, f"Validation loss {dataset_size}", color)
+            (
+                observer.validation_losses,
+                f"Validation loss {dataset_size}",
+                color,
+                "dashed",
+            )
         )
 
         accuracy_lists_and_labels.append(
-            (observer.training_accuracy, f"Training accuracy {dataset_size}", color)
+            (
+                observer.training_accuracy,
+                f"Training accuracy {dataset_size}",
+                color,
+                "solid",
+            )
         )
 
         accuracy_lists_and_labels.append(
@@ -137,6 +150,7 @@ def plot_validation_and_accuracy_from_observers(
                 observer.validation_accuracy,
                 f"Validation accuracy {dataset_size}",
                 color,
+                "dashed",
             )
         )
 

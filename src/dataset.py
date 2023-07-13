@@ -220,7 +220,7 @@ class HiddenDataset(Dataset):
         random.seed(self.random_seed)
 
         # Esnure the total length is greater than the sequence length
-        assert self.total_length > len(dataset[0][0])
+        assert self.total_length >= len(dataset[0][0])
 
         self.generate_new_examples()
 
