@@ -1097,12 +1097,12 @@ def experiment_dependence_on_weight_init(args):
         random_seed=random_seed,
     )
 
-    weight_norm = [1e-8, 1e-6, 1e-4, 1e-2, 1, 1e2]
+    weight_norms = [1e-8, 1e-6, 1e-4, 1e-2, 1, 1e2]
 
     parity_observers = []
     modulo_observers = []
 
-    for weight_norm in weight_norm:
+    for weight_norm in weight_norms:
         hidden_parity_dataset = HiddenDataset(
             dataset=parity_dataset, total_length=total_length, random_seed=random_seed
         )
@@ -1186,14 +1186,79 @@ def experiment_dependence_on_weight_init(args):
 
     plot_validation_and_accuracy_from_observers(
         parity_observers,
-        weight_norm,
+        weight_norms,
         Path("experiments/dependence_on_weight_init/parity/"),
     )
     plot_validation_and_accuracy_from_observers(
         modulo_observers,
-        weight_norm,
+        weight_norms,
         Path("experiments/dependence_on_weight_init/modulo/"),
     )
+
+
+def experiment_weight_magnitude_plot(args):
+    """
+    Here we want to plot the magntiude of weights inside of both the first
+    and second weight matrix. Basically, does Grokking correspond to a
+    large scale change in the weights?
+    """
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    ouput_size = 2
+    k = 3
+    hidden_size = 200
+    epochs = 300
+    number_training_samples = 700
+    number_validation_samples = 200
+
+    random_seed = 0
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=ouput_size,
+        random_seed=random_seed,
+    )
+
+    observer = Observer(
+        observation_settings={"weight_norm": {"frequency": 1, "layers": [1, 2]}},
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
+
+    observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
 
 
 if __name__ == "__main__":

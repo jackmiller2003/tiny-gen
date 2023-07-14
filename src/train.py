@@ -74,7 +74,7 @@ class Observer:
         for observation, setting in self.observation_settings.items():
             if observation == "weight_norm":
                 layers = setting["layers"]
-                norms = [np.linalg.norm(model.look(layer), p=2) for layer in layers]
+                norms = [np.linalg.norm(model.look(layer), ord=2) for layer in layers]
                 [
                     self.weight_norms[layer].append(norm)
                     for layer, norm in zip(layers, norms)
