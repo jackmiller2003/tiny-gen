@@ -297,9 +297,9 @@ def train_model_on_hidden_dataset(
         ouput_size = 2
         k = 3
         hidden_size = 200
-        epochs = 200
-        number_training_samples = 1000
-        number_validation_samples = 100
+        epochs = 100
+        number_training_samples = 2000
+        number_validation_samples = 200
         random_seed = 0
 
         # Create the training dataset

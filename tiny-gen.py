@@ -1293,18 +1293,24 @@ def experiment_circuit_initialisation(args):
 def experiment_circuit_initialisation_with_random(args):
     """
     The goal of this experiment is whether we can initialise the network
-    with circuits formed from previous runs to improve the generalisability.
+    with circuits formed from previous runs to improve the generalisability
+    even under random features.
     """
 
     # Train the first network
 
-    os.makedirs("experiments/circuit_initialisation_with_random/initial_model", exist_ok=True)
-    os.makedirs("experiments/circuit_initialisation_with_random/trained_model", exist_ok=True)
+    os.makedirs(
+        "experiments/circuit_initialisation_with_random/initial_model", exist_ok=True
+    )
+    os.makedirs(
+        "experiments/circuit_initialisation_with_random/trained_model", exist_ok=True
+    )
 
     model, observer = train_model_on_hidden_dataset(name="parity", input_size=3)
 
     observer.plot_me(
-        path=Path("experiments/circuit_initialisation_with_random/initial_model"), log=False
+        path=Path("experiments/circuit_initialisation_with_random/initial_model"),
+        log=False,
     )
 
     # Extract weights from the first network
@@ -1312,11 +1318,15 @@ def experiment_circuit_initialisation_with_random(args):
 
     # Train the second network
     model, observer = train_model_on_hidden_dataset(
-        name="parity", input_size=40, preset_weights=[first_layer_weights], layers_to_freeze=[1]
+        name="parity",
+        input_size=40,
+        preset_weights=[first_layer_weights],
+        layers_to_freeze=[1],
     )
 
     observer.plot_me(
-        path=Path("experiments/circuit_initialisation_with_random/trained_model"), log=False
+        path=Path("experiments/circuit_initialisation_with_random/trained_model"),
+        log=False,
     )
 
 
