@@ -4,6 +4,8 @@ from torch.utils.data import TensorDataset
 from typing import Tuple
 import random
 import numpy as np
+from tqdm import tqdm
+from scipy import odeint
 
 
 class ParityTask(Dataset):
@@ -305,3 +307,65 @@ def combine_datasets(
         combined_labels = torch.stack(combined_labels)
 
     return TensorDataset(combined_data, combined_labels)
+
+
+class PendulumPredictionTask(Dataset):
+    """
+    The Pendulum prediction task generates initial conditions for a pendulum
+    and integrates the equations of motion to generate a trajectory for each initial condition.
+    Each sample in the dataset corresponds to a single time step.
+    """
+
+    def __init__(
+        self,
+        gravity: float,
+        length: float,
+        num_samples: int,
+        time_step: float,
+        random_seed: int,
+        progress_bar: bool = True,
+    ) -> None:
+        self.gravity = gravity
+        self.length = length
+        self.num_samples = num_samples
+        self.time_step = time_step
+        self.progress_bar = progress_bar
+
+        # Setting random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+
+        self._generate_data()
+
+    def _simple_pendulum_deriv(self, x, t):
+        # The simple pendulum subject to zero damping and zero control input
+        nx = np.zeros(2)
+        nx[0] = x[1]
+        nx[1] = -(self.gravity / self.length) * np.sin(x[0])
+        return nx
+
+    def _generate_data(self):
+        t_span = np.linspace(0, self.time_step, 2)
+        self.data = torch.zeros((self.num_samples, 2))
+        self.targets = torch.zeros((self.num_samples, 2))
+
+        for i in tqdm(range(self.num_samples), disable=not self.progress_bar):
+            initial_angle = np.random.uniform(-np.pi, np.pi)
+            initial_velocity = np.random.uniform(-1, 1)
+            sol = odeint(
+                self._simple_pendulum_deriv,
+                y0=[initial_angle, initial_velocity],
+                t=t_span,
+            )
+
+            self.data[i] = torch.tensor(sol[0])
+            self.targets[i] = torch.tensor(sol[1])
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "PendulumPredictionTask"
