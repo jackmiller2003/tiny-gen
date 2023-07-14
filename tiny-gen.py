@@ -1282,9 +1282,9 @@ def experiment_training_on_openai_datasets(args):
     input_size = 40
     p = 7
     hidden_size = 1000
-    epochs = 100
-    number_training_samples = 1000
-    number_validation_samples = 100
+    epochs = 200
+    number_training_samples = 600
+    number_validation_samples = 200
     random_seed = 0
 
     datasets = []
