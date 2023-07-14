@@ -27,6 +27,11 @@ from src.dataset import (
     HiddenDataset,
     PeekParityTask,
     ModuloAdditionTask,
+    ModuloSubtractionTask,
+    ModuloDivisionTask,
+    PolynomialTask,
+    PolynomialTaskTwo,
+    ModuloMultiplicationDoubleXTask,
     combine_datasets,
 )
 from src.model import TinyModel, ExpandableModel
@@ -1079,7 +1084,7 @@ def experiment_dependence_on_weight_init(args):
     p = 3
     total_length = 40
     hidden_size = 264
-    epochs = 100
+    epochs = 200
     number_training_samples = 700
     number_validation_samples = 200
     random_seed = 0
@@ -1096,7 +1101,7 @@ def experiment_dependence_on_weight_init(args):
         random_seed=random_seed,
     )
 
-    weight_norms = [1e-8, 1e-6, 1e-4, 1e-2, 1, 1e2]
+    weight_norms = [1e-8, 1e-6, 1e-4, 1e-2, 1]
 
     parity_observers = []
     modulo_observers = []
@@ -1258,6 +1263,140 @@ def experiment_weight_magnitude_plot(args):
     )
 
     observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
+
+
+def experiment_training_on_openai_datasets(args):
+    """
+    This experiment is to see if we can reproduce grokking or even get things
+    to train on the openai datasets randomly choosen.
+
+    These include: ModuloSubtractionTask, ModuloDivisionTask, PolynomialTask, PolynomialTaskTwo and the
+    ModuloMultiplicationDoubleXTask.
+    """
+
+    os.makedirs("experiments/training_on_openai_datasets/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    p = 7
+    hidden_size = 1000
+    epochs = 5
+    number_training_samples = 1000
+    number_validation_samples = 100
+    random_seed = 0
+
+    datasets = []
+
+    for dataset in [
+        ModuloSubtractionTask,
+        ModuloDivisionTask,
+        PolynomialTask,
+        PolynomialTaskTwo,
+        ModuloMultiplicationDoubleXTask,
+    ]:
+        datasets.append(
+            dataset(
+                num_samples=number_training_samples + number_validation_samples,
+                random_seed=random_seed,
+                modulo=p,
+            )
+        )
+
+    observers_of_datasets = []
+
+    for dataset in datasets:
+        hidden_dataset = HiddenDataset(
+            dataset=dataset,
+            total_length=input_size,
+            random_seed=random_seed,
+        )
+
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            dataset,
+            [number_training_samples, number_validation_samples],
+        )
+
+        (
+            hidden_training_dataset,
+            hidden_validation_dataset,
+        ) = torch.utils.data.random_split(
+            hidden_dataset,
+            [number_training_samples, number_validation_samples],
+        )
+
+        model = TinyModel(
+            input_size=2 * p,
+            hidden_layer_size=hidden_size,
+            output_size=p,
+            random_seed=random_seed,
+        )
+
+        observer = Observer(
+            observation_settings={"weight_norm": {"frequency": 1, "layers": [1, 2]}},
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            observer=observer,
+        )
+
+        observer.plot_me(
+            path=Path(f"experiments/training_on_openai_datasets/{dataset.__name__()}/"),
+        )
+
+        # Hidden versions
+        model_hidden = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=p,
+            random_seed=random_seed,
+        )
+
+        observer_hidden = Observer(
+            observation_settings={"weight_norm": {"frequency": 1, "layers": [1, 2]}},
+        )
+
+        (model_hidden, observer_hidden) = train_model(
+            training_dataset=hidden_training_dataset,
+            validation_dataset=hidden_validation_dataset,
+            model=model_hidden,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            observer=observer_hidden,
+        )
+
+        observer_hidden.plot_me(
+            path=Path(
+                f"experiments/training_on_openai_datasets/{dataset.__name__()}_hidden/"
+            ),
+        )
+
+        observers_of_datasets.append([observer, observer_hidden])
+
+    for i, observer_list in enumerate(observers_of_datasets):
+        plot_validation_and_accuracy_from_observers(
+            observer_list,
+            ["regular", "hidden"],
+            Path(
+                f"experiments/training_on_openai_datasets/{datasets[i].__name__()}_combined/"
+            ),
+        )
 
 
 if __name__ == "__main__":
