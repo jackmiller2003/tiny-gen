@@ -134,7 +134,7 @@ class ExpandableModel(nn.Module):
             self.layers.append(nn.Linear(previous_layer_size, layer_size))
             previous_layer_size = layer_size
 
-        self.layers.append(nn.Linear(previous_layer_size, self.output_size))
+        self.layers.append(nn.Linear(previous_layer_size, self.output_size, bias=False))
 
         # Initialise weights
         for layer in self.layers:

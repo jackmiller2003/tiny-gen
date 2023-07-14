@@ -49,7 +49,7 @@ def experiment_grokking_plain(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size = 1000
     epochs = 2
@@ -78,7 +78,7 @@ def experiment_grokking_plain(args):
     model = TinyModel(
         input_size=input_size,
         hidden_layer_size=hidden_size,
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 
@@ -98,17 +98,17 @@ def experiment_grokking_plain(args):
     observer.plot_me(path=Path("experiments/grokking_plain/"))
 
 
-def experiment_data_sensitvity(args):
+def experiment_data_sensitivity(args):
     """
     Here we are going to look at the sensitivity of grokking to the size of the underlying dataset
-    for the parity prediction task. We will use the same model as in experiment 0.
+    for the parity prediction task. We will use the same model as in experiment grokking_plain.
     """
 
     weight_decay = 1e-2
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size = 1000
     epochs = 2
@@ -140,7 +140,7 @@ def experiment_data_sensitvity(args):
         model = TinyModel(
             input_size=input_size,
             hidden_layer_size=hidden_size,
-            output_size=ouput_size,
+            output_size=output_size,
             random_seed=random_seed,
         )
 
@@ -176,7 +176,7 @@ def experiment_random_features(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size = 1000
     epochs = 2
@@ -208,9 +208,11 @@ def experiment_random_features(args):
         model = TinyModel(
             input_size=input_size,
             hidden_layer_size=hidden_size,
-            output_size=ouput_size,
+            output_size=output_size,
             random_seed=random_seed,
         )
+
+        model.freeze([1])
 
         (model, observer) = train_model(
             training_dataset=training_dataset,
@@ -243,7 +245,7 @@ def experiment_two_layer(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size_1 = 1000
     hidden_size_2 = 1000
@@ -272,7 +274,7 @@ def experiment_two_layer(args):
     model = ExpandableModel(
         input_size=input_size,
         hidden_layer_sizes=[hidden_size_1, hidden_size_2],
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 
@@ -310,7 +312,7 @@ def experiment_random_feature_3_layer(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size_1 = 200
     hidden_size_2 = 200
@@ -340,7 +342,7 @@ def experiment_random_feature_3_layer(args):
     model = ExpandableModel(
         input_size=input_size,
         hidden_layer_sizes=[hidden_size_1, hidden_size_2, hidden_size_3],
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 
@@ -377,7 +379,7 @@ def experiment_double_grokking(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size = 1000
     epochs = 200
@@ -418,7 +420,7 @@ def experiment_double_grokking(args):
     model = TinyModel(
         input_size=input_size,
         hidden_layer_size=hidden_size,
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 
@@ -471,7 +473,7 @@ def experiment_rate_limiting(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size = 1000
     epochs = 200
@@ -501,7 +503,7 @@ def experiment_rate_limiting(args):
         model = TinyModel(
             input_size=input_size,
             hidden_layer_size=hidden_size,
-            output_size=ouput_size,
+            output_size=output_size,
             random_seed=random_seed,
         )
 
@@ -541,7 +543,7 @@ def experiment_grokking_on_modulo_arithmetic(args):
     batch_size = 32
     p = 29
     input_size = p * 2
-    ouput_size = p
+    output_size = p
     hidden_size = 1000
     epochs = 500
     number_training_samples = 1000
@@ -562,7 +564,7 @@ def experiment_grokking_on_modulo_arithmetic(args):
     model = TinyModel(
         input_size=input_size,
         hidden_layer_size=hidden_size,
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 
@@ -597,7 +599,7 @@ def experiment_combined_prediction(args):
     batch_size = 32
     k = 3
     p = 2
-    ouput_size = 2 + p
+    output_size = 2 + p
     input_size = 80
     hidden_size = 264
     epochs = 200
@@ -666,7 +668,7 @@ def experiment_combined_prediction(args):
     model = TinyModel(
         input_size=input_size,
         hidden_layer_size=hidden_size,
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 
@@ -709,7 +711,7 @@ def experiment_combined_prediction_constrained(args):
     batch_size = 32
     k = 3
     p = 2
-    ouput_size = 2 + p
+    output_size = 2 + p
     input_size = 80
     hidden_size = 264
     epochs = 200
@@ -791,7 +793,7 @@ def experiment_combined_prediction_constrained(args):
         model = TinyModel(
             input_size=input_size,
             hidden_layer_size=hidden_size,
-            output_size=ouput_size,
+            output_size=output_size,
             random_seed=random_seed,
         )
 
@@ -818,10 +820,7 @@ def experiment_combined_prediction_constrained(args):
 def experiment_combined_hidden_and_data_constrained(args):
     """
     Same experiment as the combined prediction task but a continual reduction
-    in the hidden layer size.
-
-    Currently, not getting grokking but some interesting weight sharing
-    thing going on in 32.
+    in the hidden layer size and a smaller number of training points.
     """
 
     weight_decay = 1e-2
@@ -829,7 +828,7 @@ def experiment_combined_hidden_and_data_constrained(args):
     batch_size = 32
     k = 3
     p = 2
-    ouput_size = 2 + p
+    output_size = 2 + p
     input_size = 80
     hidden_size = 264
     epochs = 200
@@ -911,7 +910,7 @@ def experiment_combined_hidden_and_data_constrained(args):
         model = TinyModel(
             input_size=input_size,
             hidden_layer_size=hidden_size,
-            output_size=ouput_size,
+            output_size=output_size,
             random_seed=random_seed,
         )
 
@@ -1207,7 +1206,7 @@ def experiment_weight_magnitude_plot(args):
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40
-    ouput_size = 2
+    output_size = 2
     k = 3
     hidden_size = 200
     epochs = 300
@@ -1236,7 +1235,7 @@ def experiment_weight_magnitude_plot(args):
     model = TinyModel(
         input_size=input_size,
         hidden_layer_size=hidden_size,
-        output_size=ouput_size,
+        output_size=output_size,
         random_seed=random_seed,
     )
 

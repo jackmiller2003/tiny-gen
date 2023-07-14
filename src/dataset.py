@@ -29,9 +29,9 @@ class ParityTask(Dataset):
         np.random.seed(self.random_seed)
         random.seed(self.random_seed)
 
-        self.generate_data()
+        self._generate_data()
 
-    def generate_data(self) -> None:
+    def _generate_data(self) -> None:
         """
         Generates the data for the parity prediction task.
 
@@ -105,9 +105,9 @@ class PeekParityTask(Dataset):
         if len(peek_condition) != sequence_length:
             raise ValueError("Peek condition must be the same length as k.")
 
-        self.generate_data()
+        self._generate_data()
 
-    def generate_data(self) -> None:
+    def _generate_data(self) -> None:
         self.data = torch.randint(
             0,
             2,
@@ -163,9 +163,9 @@ class ModuloAdditionTask(Dataset):
         np.random.seed(self.random_seed)
         random.seed(self.random_seed)
 
-        self.generate_data()
+        self._generate_data()
 
-    def generate_data(self) -> None:
+    def _generate_data(self) -> None:
         """
         Generates the data for the modulo addition task.
 
