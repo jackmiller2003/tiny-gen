@@ -3,6 +3,7 @@ import torch.nn as nn
 
 import numpy.typing as npt
 import numpy as np
+import random
 
 
 class TinyModel(nn.Module):
@@ -15,7 +16,7 @@ class TinyModel(nn.Module):
         input_size: int,
         hidden_layer_size: int,
         output_size: int,
-        random_seed: int = 42,
+        random_seed: int,
         verbose: bool = True,
     ) -> None:
         """
@@ -25,6 +26,11 @@ class TinyModel(nn.Module):
         - hidden layer: int
         """
 
+        # Sets all random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
+
         super(TinyModel, self).__init__()
 
         self.input_size = input_size
@@ -33,8 +39,6 @@ class TinyModel(nn.Module):
 
         self.fc1 = nn.Linear(self.input_size, self.hidden_layer_size)
         self.fc2 = nn.Linear(self.hidden_layer_size, self.output_size, bias=False)
-
-        torch.manual_seed(random_seed)
 
         # Initialise weights
         nn.init.xavier_uniform_(self.fc1.weight)
@@ -98,91 +102,6 @@ class TinyModel(nn.Module):
         return x
 
 
-class BigModel(nn.Module):
-    """
-    Model with more than two layers :O
-    """
-
-    def __init__(
-        self,
-        input_size: int,
-        hidden_layer_sizes: list[int],
-        output_size: int,
-        random_seed: int = 42,
-        verbose: bool = True,
-    ) -> None:
-        super(BigModel, self).__init__()
-
-        self.input_size = input_size
-        self.hidden_layer_sizes = hidden_layer_sizes
-        self.output_size = output_size
-        self.random_seed = random_seed
-
-        self.fc1 = nn.Linear(self.input_size, self.hidden_layer_sizes[0])
-        self.fc2 = nn.Linear(
-            self.hidden_layer_sizes[0], self.hidden_layer_sizes[1], bias=True
-        )
-        self.fc3 = nn.Linear(self.hidden_layer_sizes[1], self.output_size, bias=False)
-
-        torch.manual_seed(random_seed)
-
-        # Initialise weights
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.xavier_uniform_(self.fc2.weight)
-        nn.init.xavier_uniform_(self.fc3.weight)
-
-        # Determine if there is a GPU available and if so, move the model to GPU
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-        self.to(self.device)
-
-        if verbose:
-            print(f"Model initialised on device: {self.device}")
-
-    def look(self, layer: int) -> npt.NDArray[np.float64]:
-        """
-        Looks inside the model weights producing
-        """
-
-        if layer == 1:
-            return self.fc1.weight.cpu().detach().numpy()
-        elif layer == 2:
-            return self.fc2.weight.cpu().detach().numpy()
-        elif layer == 3:
-            return self.fc3.weight.cpu().detach().numpy()
-        else:
-            raise ValueError("Invalid layer.")
-
-    def freeze(self, list_of_layers: list[int]) -> None:
-        """
-        Freezes layers in the model.
-        """
-
-        for layer in list_of_layers:
-            if layer == 1:
-                self.fc1.weight.requires_grad = False
-                self.fc1.bias.requires_grad = False
-            elif layer == 2:
-                self.fc2.weight.requires_grad = False
-                self.fc2.bias.requires_grad = False
-            elif layer == 3:
-                self.fc3.weight.requires_grad = False
-                self.fc3.bias.requires_grad = False
-            else:
-                raise ValueError("Invalid layer.")
-
-    def forward(self, x):
-        """
-        Completes a forward pass of the network
-        """
-
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
-
-        return x
-
-
 class ExpandableModel(nn.Module):
     """
     Model with an expandable number of layers
@@ -203,6 +122,11 @@ class ExpandableModel(nn.Module):
         self.output_size = output_size
         self.random_seed = random_seed
 
+        # Sets all random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
+
         self.layers = nn.ModuleList()
 
         previous_layer_size = self.input_size
@@ -210,9 +134,7 @@ class ExpandableModel(nn.Module):
             self.layers.append(nn.Linear(previous_layer_size, layer_size))
             previous_layer_size = layer_size
 
-        self.layers.append(nn.Linear(previous_layer_size, self.output_size))
-
-        torch.manual_seed(random_seed)
+        self.layers.append(nn.Linear(previous_layer_size, self.output_size, bias=False))
 
         # Initialise weights
         for layer in self.layers:
