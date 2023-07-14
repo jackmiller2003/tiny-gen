@@ -3,163 +3,78 @@ from torch.utils.data import Dataset
 from torch.utils.data import TensorDataset
 from typing import Tuple
 import random
+import numpy as np
 
 
-class ParityPredictionDataset(Dataset):
+class ParityTask(Dataset):
     """
-    Dataset for the parity prediction problem:
+    The parity prediction task takes in binary sequences and provides
+    the parity of the sequence as the target.
 
-    Given a sequence of length n composed of -1 and 1,
-    calculate the parity of the first k members of the sequence.
+    For example:
 
-    For example, [1,1,-1,1,1,-1] with k=3 has a parity of -1
-    since we only look at the first three components.
-    We inform the network of the k and give it the sequence.
+    [0, 1, 0, 1] -> [1,0]
+    [1, 1, 0, 1] -> [0,1]
     """
 
     def __init__(
-        self,
-        num_samples: int,
-        sequence_length: int,
-        k_factor_range: tuple,
-        max_k_factor: int = 20,
-        verbose: bool = True,
-        for_cross_entropy: bool = False,
+        self, sequence_length: int, num_samples: int, random_seed: int
     ) -> None:
-        """
-        Initialises the dataset with:
-        - num_samples: int
-        - sequence_length: int
-        - k_factor_range: tuple, the range of k factors to use before generalisation
-        """
-
-        self.num_samples = num_samples
         self.sequence_length = sequence_length
-        self.k_factor_range = k_factor_range
-        self.max_k_factor = max_k_factor
-        self.num_k_factors = self.k_factor_range[1] - self.k_factor_range[0] + 1
-        self.for_cross_entropy = for_cross_entropy
+        self.num_samples = num_samples
+        self.random_seed = random_seed
 
-        self.generate_dataset()
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
 
-    def generate_dataset(self) -> None:
+        self._generate_data()
+
+    def _generate_data(self) -> None:
         """
-        Generates the dataset by creating random sequences of -1 and 1
-        then assigns to each sequence the parity of the first k members
-        for k in the range k_factor_range.
+        Generates the data for the parity prediction task.
+
+        Here the result should be one hot encoded into two classes,
+        even and odd.
         """
-
-        # Adjust the number of sequences based on the number of k_factors
-        num_sequences = self.num_samples // self.num_k_factors
-
-        sequences = (
-            torch.randint(0, 2, size=(num_sequences, self.sequence_length)) * 2 - 1
+        self.data = torch.randint(
+            0,
+            2,
+            (self.num_samples, self.sequence_length),
         )
 
-        data_list = []
-        label_list = []
+        parities = []
 
-        k_factors = list(range(self.k_factor_range[0], self.k_factor_range[1] + 1))
-
-        for sequence in sequences:
-            for k_factor in k_factors:
-                # Calculate the parity of the first k_factor elements
-                parity = torch.prod(sequence[:k_factor])
-
-                # Create a one-hot encoding of k_factor
-                k_factor_one_hot = torch.zeros(self.max_k_factor)
-                k_factor_one_hot[k_factor - 1] = 1
-
-                sequence_with_prepended_k = torch.cat((k_factor_one_hot, sequence))
-
-                data_list.append(sequence_with_prepended_k)
-
-                if self.for_cross_entropy:
-                    if parity == -1:
-                        label_list.append(torch.tensor([0]))
-                    else:
-                        label_list.append(torch.tensor([1]))
+        for data_point_sequence in self.data:
+            new_sequence = []
+            for point in data_point_sequence:
+                if point == 0:
+                    new_sequence.append(-1)
                 else:
-                    label_list.append(parity)
+                    new_sequence.append(1)
 
-                # Once we reach the desired number of samples, stop adding more
-                if len(data_list) >= self.num_samples:
-                    break
+            one_hot_parity = torch.zeros(2)
 
-            if len(data_list) >= self.num_samples:
-                break
+            parity = torch.prod(torch.tensor(new_sequence))
 
-        self.data = torch.stack(data_list)[: self.num_samples]
-        self.labels = torch.stack(label_list)[: self.num_samples]
-
-    def __len__(self):
-        return self.num_samples
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.data[idx], self.labels[idx]
-
-
-class HiddenParityPrediction(Dataset):
-    """
-    In this parity prediction task the value of k is not given to the network.
-    Instead the network must infer this on its own.
-    """
-
-    def __init__(
-        self,
-        num_samples: int,
-        sequence_length: int,
-        k: int,
-        for_cross_entropy: bool = False,
-    ):
-        self.num_samples = num_samples
-        self.sequence_length = sequence_length
-        self.k = k
-        self.for_cross_entropy = for_cross_entropy
-
-        self.generate_dataset()
-
-    def generate_dataset(self) -> None:
-        """
-        Generates the dataset by creating random sequences of -1 and 1
-        then assigns to each sequence the parity of the first k members
-        """
-
-        # Create random sequences of -1 and 1
-        sequences = (
-            torch.randint(0, 2, size=(self.num_samples, self.sequence_length)) * 2 - 1
-        ).float()
-
-        data_list = []
-        label_list = []
-
-        for sequence in sequences:
-            # Calculate the parity of the first k_factor elements
-            parity = torch.prod(sequence[: self.k])
-
-            data_list.append(sequence)
-
-            if self.for_cross_entropy:
-                one_hot = torch.zeros(2, dtype=torch.float32)
-                if parity == -1:
-                    one_hot[0] = 1
-                else:
-                    one_hot[1] = 1
-                label_list.append(one_hot)
+            if parity == -1:
+                one_hot_parity[0] = 1
             else:
-                label_list.append(parity)
+                one_hot_parity[1] = 1
 
-        self.data = torch.stack(data_list)
-        self.labels = torch.stack(label_list)
+            parities.append(one_hot_parity)
+
+        self.targets = torch.stack(parities)
 
     def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.data[idx], self.labels[idx]
+        return self.data[idx], self.targets[idx]
 
 
-class HiddenPeekParityPrediction(Dataset):
+class PeekParityTask(Dataset):
     """
     This is similar to the parity prediction task. However, upon a certain set of
     set of conditions, the network must peek at the (k+1)th value to determine
@@ -168,154 +83,168 @@ class HiddenPeekParityPrediction(Dataset):
 
     def __init__(
         self,
-        num_samples: int,
         sequence_length: int,
+        num_samples: int,
         peek_condition: list[int],
-        k: int,
-    ):
+        random_seed: int,
+    ) -> None:
+        """
+        Note sequence lenght is the usual lenght of the sequence, not the
+        peek ahead sequence length.
+        """
         self.num_samples = num_samples
         self.sequence_length = sequence_length
+        self.random_seed = random_seed
         self.peek_condition = peek_condition
-        self.k = k
 
-        if len(peek_condition) != k:
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        if len(peek_condition) != sequence_length:
             raise ValueError("Peek condition must be the same length as k.")
 
-        self.generate_dataset()
+        self._generate_data()
 
-    def generate_dataset(self) -> None:
-        """
-        Generates the dataset by creating random sequences of -1 and 1
-        then assigns to each sequence the parity of the first k members
-        """
+    def _generate_data(self) -> None:
+        self.data = torch.randint(
+            0,
+            2,
+            (self.num_samples, self.sequence_length + 1),
+        )
 
-        # Create random sequences of -1 and 1
-        sequences = (
-            torch.randint(0, 2, size=(self.num_samples, self.sequence_length)) * 2 - 1
-        ).float()
+        parities = []
 
-        data_list = []
-        label_list = []
+        for data_point_sequence in self.data:
+            new_sequence = []
+            for point in data_point_sequence[:-1]:
+                if point == 0:
+                    new_sequence.append(-1)
+                else:
+                    new_sequence.append(1)
 
-        for sequence in sequences:
-            # Calculate the parity of the first k_factor elements
-            parity = torch.prod(sequence[: self.k])
+            one_hot_parity = torch.zeros(2)
 
-            if (sequence[: self.k] == torch.tensor(self.peek_condition)).all():
-                # Peek at the (k+1)th value
-                parity = parity * sequence[self.k + 1]
+            if new_sequence == self.peek_condition:
+                new_sequence.append(data_point_sequence[-1])
 
-            data_list.append(sequence)
-            label_list.append(parity)
+            parity = torch.prod(torch.tensor(new_sequence))
 
-        self.data = torch.stack(data_list)
-        self.labels = torch.stack(label_list)
+            if parity == -1:
+                one_hot_parity[0] = 1
+            else:
+                one_hot_parity[1] = 1
+
+            parities.append(one_hot_parity)
+
+        self.targets = torch.stack(parities)
 
     def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.data[idx], self.labels[idx]
+        return self.data[idx], self.targets[idx]
 
 
-class ModularArithmeticTask(Dataset):
+class ModuloAdditionTask(Dataset):
     """
-    Modular arithmetic with a given prime p
+    The modulo addition task takes in binary sequences and provides
+    the modulo addition of the sequence as the target.
     """
 
-    def __init__(self, p: int, num_samples: int):
-        self.p = p
+    def __init__(self, modulo: int, num_samples: int, random_seed: int) -> None:
+        self.modulo = modulo
         self.num_samples = num_samples
+        self.random_seed = random_seed
 
-        self.generate_dataset()
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
 
-    def generate_dataset(self):
+        self._generate_data()
+
+    def _generate_data(self) -> None:
         """
-        Creates a dataset of example of modular arithmetic modulo p where
-        each number is encoded as a one-hot vector
+        Generates the data for the modulo addition task.
+
+        The input data should be a sequence of lenght 2*modulo
+        representing a and b in the equation
+        a+b = c (mod modulo)
+
+        Here a and b are one hot encoded.
         """
 
-        data_list = []
-        label_list = []
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
 
         for i in range(0, self.num_samples):
-            a = random.randint(0, self.p - 1)
-            b = random.randint(0, self.p - 1)
+            a = random.randint(0, self.modulo - 1)
+            b = random.randint(0, self.modulo - 1)
+            c = (a + b) % self.modulo
 
-            result = (a + b) % self.p
+            a_zeros = torch.zeros(self.modulo)
+            b_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
 
-            # Create a one-hot encoding of k_factor
-            sequence_one_hot = torch.zeros(self.p * 2)
-            sequence_one_hot[a] = 1
-            sequence_one_hot[self.p + b] = 1
+            a_zeros[a] = 1
+            b_zeros[b] = 1
+            c_zeros[c] = 1
 
-            result_one_hot = torch.zeros(self.p)
-            result_one_hot[result] = 1
-
-            data_list.append(sequence_one_hot)
-            label_list.append(result_one_hot)
-
-        self.data = torch.stack(data_list)
-        self.labels = torch.stack(label_list)
+            self.data[i] = torch.cat((a_zeros, b_zeros))
+            self.targets[i] = c_zeros
 
     def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.data[idx], self.labels[idx]
+        return self.data[idx], self.targets[idx]
 
 
-class HiddenModularArithmeticTask(Dataset):
+class HiddenDataset(Dataset):
     """
-    Modular arithmetic with a given prime p, with additional random binary digits
+    Hides a dataset by increasing the sequence length with random
+    0s and 1s at the end of the sequence. The total length of the
+    sequence is given by the hidden_length parameter.
     """
 
-    def __init__(self, p: int, num_samples: int, sequence_length: int):
-        self.p = p
-        self.num_samples = num_samples
-        self.sequence_length = sequence_length
+    def __init__(self, dataset: Dataset, total_length: int, random_seed: int) -> None:
+        self.dataset = dataset
+        self.total_length = total_length
+        self.random_seed = random_seed
 
-        self.generate_dataset()
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
 
-    def generate_dataset(self):
-        """
-        Creates a dataset of examples of modular arithmetic modulo p where
-        each number is encoded as a one-hot vector. Additional random binary digits
-        are appended to the sequence.
-        """
+        # Esnure the total length is greater than the sequence length
+        assert self.total_length >= len(dataset[0][0])
 
-        data_list = []
-        label_list = []
+        self.generate_new_examples()
 
-        for i in range(0, self.num_samples):
-            a = random.randint(0, self.p - 1)
-            b = random.randint(0, self.p - 1)
+    def generate_new_examples(self) -> None:
+        new_examples = []
+        new_targets = []
 
-            result = (a + b) % self.p
+        for data_point, target in self.dataset:
+            new_data_point = torch.zeros(self.total_length)
+            new_data_point[: len(data_point)] = data_point[: len(data_point)]
+            new_data_point[len(data_point) :] = torch.randint(
+                0, 2, (self.total_length - len(data_point), 1)
+            ).squeeze()
+            new_examples.append(new_data_point)
+            new_targets.append(target)
 
-            # Create a one-hot encoding of k_factor
-            sequence_one_hot = torch.zeros(self.sequence_length)
-            sequence_one_hot[a] = 1
-            sequence_one_hot[self.p + b] = 1
-
-            # Fill the remaining part of the sequence with random binary digits
-            for j in range(self.p * 2, self.sequence_length):
-                sequence_one_hot[j] = random.choice([0, 1])
-
-            result_one_hot = torch.zeros(self.p, dtype=torch.float32)
-            result_one_hot[result] = 1
-
-            data_list.append(sequence_one_hot)
-            label_list.append(result_one_hot)
-
-        self.data = torch.stack(data_list)
-        self.labels = torch.stack(label_list)
+        self.data = torch.stack(new_examples)
+        self.targets = torch.stack(new_targets)
 
     def __len__(self) -> int:
-        return self.num_samples
+        return len(self.data)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.data[idx], self.labels[idx]
+        return self.data[idx], self.targets[idx]
 
 
 def combine_datasets(

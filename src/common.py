@@ -1,13 +1,13 @@
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset
 
-from src.dataset import ParityPredictionDataset
 from src.model import TinyModel
 
 
 def get_accuracy_on_dataset(
     model: TinyModel,
-    dataset: ParityPredictionDataset,
+    dataset: Dataset,
     batch_size: int = 32,
     verbose: bool = False,
 ) -> float:
