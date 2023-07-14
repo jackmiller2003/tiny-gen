@@ -635,10 +635,3 @@ class ModuloMultiplicationDoubleXTask(Dataset):
 
     def __name__(self) -> str:
         return "ModuloMultiplicationDoubleXTask"
-
-
-class PendulumDynamicPrediction(Dataset):
-    """
-    In this dataset we try a non-binary problem. Namely predicting the location
-    and velocity of a pendulum at the next time step.
-    """
