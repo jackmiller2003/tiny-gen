@@ -1282,7 +1282,7 @@ def experiment_training_on_openai_datasets(args):
     input_size = 40
     p = 7
     hidden_size = 1000
-    epochs = 5
+    epochs = 100
     number_training_samples = 1000
     number_validation_samples = 100
     random_seed = 0
@@ -1390,11 +1390,15 @@ def experiment_training_on_openai_datasets(args):
         observers_of_datasets.append([observer, observer_hidden])
 
     for i, observer_list in enumerate(observers_of_datasets):
+        os.makedirs(
+            f"experiments/training_on_openai_datasets/{datasets[i].__name__()}/combined",
+            exist_ok=True,
+        )
         plot_validation_and_accuracy_from_observers(
             observer_list,
             ["regular", "hidden"],
             Path(
-                f"experiments/training_on_openai_datasets/{datasets[i].__name__()}_combined/"
+                f"experiments/training_on_openai_datasets/{datasets[i].__name__()}/combined"
             ),
         )
 
