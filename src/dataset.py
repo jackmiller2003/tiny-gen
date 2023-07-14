@@ -5,7 +5,7 @@ from typing import Tuple
 import random
 import numpy as np
 from tqdm import tqdm
-from scipy import odeint
+from scipy.integrate import odeint
 
 
 class ParityTask(Dataset):
@@ -369,3 +369,22 @@ class PendulumPredictionTask(Dataset):
 
     def __name__(self) -> str:
         return "PendulumPredictionTask"
+
+
+if __name__ == "__main__":
+    pendulum_dataset = PendulumPredictionTask(
+        gravity=9.8,
+        length=1,
+        num_samples=1000,
+        time_step=0.01,
+        random_seed=42,
+    )
+
+    print(pendulum_dataset[0])
+
+    # Graph the pendulum dataset
+    import matplotlib.pyplot as plt
+
+    plt.plot(pendulum_dataset.data[:, 0], pendulum_dataset.data[:, 1], "o")
+
+    plt.savefig("pendulum.png")
