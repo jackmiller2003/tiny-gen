@@ -2,9 +2,12 @@ import torch
 from torch.utils.data import Dataset
 import torch.nn as nn
 
+from typing import Union
+
 from src.model import TinyModel, MyHingeLoss
 from src.common import get_accuracy, get_accuracy_on_dataset
 from src.plot import plot_list_of_lines_and_labels, plot_heatmap
+from src.dataset import ParityTask, HiddenDataset
 
 from tqdm import tqdm
 import os
@@ -264,5 +267,111 @@ def train_model(
 
         observer.observe_generalisation(model)
         observer.observe_weights(model)
+
+    return (model, observer)
+
+
+def train_model_on_hidden_dataset(
+    name: str,
+    preset_weights: Union[list[npt.NDArray[np.float64]], object] = None,
+    input_size: int = 40,
+    layers_to_freeze: list[int] = None,
+) -> tuple[torch.nn.Module, Observer]:
+    """
+    Trains a TinyModel on a dataset of a given name.
+    """
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    observer = Observer(
+        observation_settings={
+            "weights": {"layers": [1, 2], "frequency": 10},
+            "weight_norm": {"layers": [1, 2]},
+        },
+    )
+
+    if name == "parity":
+        weight_decay = 1e-2
+        learning_rate = 1e-1
+        batch_size = 32
+        ouput_size = 2
+        k = 3
+        hidden_size = 200
+        epochs = 100
+        number_training_samples = 2000
+        number_validation_samples = 200
+        random_seed = 0
+
+        # Create the training dataset
+        parity_task_dataset = ParityTask(
+            sequence_length=k,
+            num_samples=number_training_samples + number_validation_samples,
+            random_seed=random_seed,
+        )
+
+        hidden_parity_task_dataset = HiddenDataset(
+            dataset=parity_task_dataset,
+            total_length=input_size,
+            random_seed=random_seed,
+        )
+
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            hidden_parity_task_dataset,
+            [number_training_samples, number_validation_samples],
+        )
+
+        model = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=ouput_size,
+            random_seed=random_seed,
+        )
+
+        # TODO: less janky thanks
+        if preset_weights is not None:
+            for layer_number, weight in enumerate(preset_weights):
+                if layer_number + 1 == 1:
+                    torch_weights = torch.from_numpy(weight).to(device)
+                    original_weights = model.fc1.weight.detach()
+
+                    print(model.fc1.weight.shape)
+                    print(torch_weights.shape)
+
+                    # Detatch the weights from the graph
+                    torch_weights = torch_weights.detach()
+
+                    if model.fc1.weight.shape != torch_weights.shape:
+                        # Put the torch_weights in the top left of the matrix
+                        original_weights[
+                            : torch_weights.shape[0],
+                            : torch_weights.shape[1],
+                        ] = torch_weights
+
+                        model.fc1.weight = nn.Parameter(
+                            original_weights,
+                            requires_grad=True,
+                        )
+                    else:
+                        model.fc1.weight = nn.Parameter(
+                            torch_weights,
+                            requires_grad=True,
+                        )
+
+        if layers_to_freeze is not None:
+            model.freeze(layers_to_freeze)
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            observer=observer,
+        )
 
     return (model, observer)

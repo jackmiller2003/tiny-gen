@@ -91,6 +91,30 @@ class TinyModel(nn.Module):
             else:
                 raise ValueError("Invalid layer.")
 
+    def extract_circuit(self, layer: int, threshold: float) -> npt.NDArray[np.float64]:
+        """
+        This method seeks to find "circuits" which are higher than
+        a partiuclar threshold weight value in a layer.
+        """
+
+        if layer == 1:
+            weight_matrix = self.fc1.weight.cpu().detach().numpy()
+        elif layer == 2:
+            weight_matrix = self.fc2.weight.cpu().detach().numpy()
+        else:
+            raise ValueError("Invalid layer.")
+
+        absolute_weight_matrix = np.abs(weight_matrix)
+
+        # Find the indices of the weights which are above the threshold
+        indices = np.where(absolute_weight_matrix > threshold)
+
+        # Create a new matrix with the same shape as the weight matrix
+        circuit_matrix = np.zeros(weight_matrix.shape)
+        circuit_matrix[indices] = weight_matrix[indices]
+
+        return circuit_matrix
+
     def forward(self, x):
         """
         Completes a forward pass of the network
