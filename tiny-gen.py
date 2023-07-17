@@ -1203,6 +1203,8 @@ def experiment_weight_magnitude_plot(args):
     large scale change in the weights?
     """
 
+    os.makedirs("experiments/weight_magnitude_plot/", exist_ok=True)
+
     weight_decay = 1e-2
     learning_rate = 1e-1
     batch_size = 32
@@ -1210,7 +1212,7 @@ def experiment_weight_magnitude_plot(args):
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 300
+    epochs = 5000
     number_training_samples = 700
     number_validation_samples = 200
 
