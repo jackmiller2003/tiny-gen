@@ -21,6 +21,7 @@ import argparse
 import numpy as np
 from pathlib import Path
 import os
+from functools import partial
 
 from src.dataset import (
     ParityTask,
@@ -34,7 +35,7 @@ from src.train import train_model, Observer
 from src.plot import (
     plot_validation_and_accuracy_from_observers,
 )
-from src.common import get_accuracy_on_dataset
+from src.common import weight_decay_LP
 
 
 def experiment_grokking_plain(args):
@@ -1258,6 +1259,80 @@ def experiment_weight_magnitude_plot(args):
     )
 
     observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
+
+
+def experiment_polynomial_weight_decay(args):
+    """
+    In this experiment we see whether different functions for the weight decay
+    impacts grokking as hypothesised in: https://www.beren.io/2022-01-11-Grokking-Grokking/.
+    """
+
+    os.makedirs("experiments/polynomial_weight_decay/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    output_size = 2
+    k = 3
+    hidden_size = 1000
+    epochs = 200
+    training_dataset_size = 1000
+    number_validation_samples = 100
+    random_seed = 0
+
+    polynomial_degree = [2, 3, 4, 5]
+
+    observers = []
+
+    for degree in polynomial_degree:
+        entire_dataset = ParityTask(
+            sequence_length=k,
+            num_samples=training_dataset_size + number_validation_samples,
+            random_seed=random_seed,
+        )
+
+        hidden_dataset = HiddenDataset(
+            dataset=entire_dataset,
+            total_length=input_size,
+            random_seed=random_seed,
+        )
+
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            hidden_dataset,
+            [training_dataset_size, number_validation_samples],
+        )
+
+        model = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=output_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            weight_decay_function=partial(
+                weight_decay_LP, lambda_=weight_decay, degree=degree
+            ),
+        )
+
+        observers.append(observer)
+
+    plot_validation_and_accuracy_from_observers(
+        observers=observers,
+        label_list=polynomial_degree,
+        path=Path("experiments/polynomial_weight_decay/"),
+    )
 
 
 if __name__ == "__main__":

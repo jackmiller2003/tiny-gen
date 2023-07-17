@@ -68,3 +68,23 @@ def get_accuracy(
                 ).float()
             )
         )
+
+
+def weight_decay_LP(model, lambda_: float, degree: int):
+    """
+    Computes Lp norm weight decay for the model.
+
+    Args:
+        model (nn.Module): PyTorch model
+        lambda_ (float): Regularization factor
+        degree (int): Degree of polynomial for Lp norm
+
+    Returns:
+        float: Lp weight decay
+    """
+    lp_norm_total = 0.0
+    for param in model.parameters():
+        if param.requires_grad:
+            lp_norm_total += torch.sum(torch.abs(param) ** degree)
+
+    return lambda_ * lp_norm_total
