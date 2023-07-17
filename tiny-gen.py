@@ -1207,7 +1207,7 @@ def experiment_weight_magnitude_plot(args):
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 300
+    epochs = 4000
     number_training_samples = 700
     number_validation_samples = 200
 
