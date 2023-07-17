@@ -18,7 +18,6 @@ by running the experiment with the same random seeds.
 import torch
 from torch.utils.data import TensorDataset
 import argparse
-import numpy as np
 from pathlib import Path
 import os
 
@@ -34,9 +33,6 @@ from src.train import train_model, Observer
 from src.plot import (
     plot_validation_and_accuracy_from_observers,
 )
-from src.common import get_accuracy_on_dataset
-
-import external.pyvarinf.pyvarinf as pyvarinf
 
 
 def experiment_grokking_plain(args):
@@ -1262,6 +1258,74 @@ def experiment_weight_magnitude_plot(args):
     observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
 
 
+def experiment_training_with_vafe(args):
+    """
+    We look at the variational free energy and its components during grokking.
+    """
+
+    os.makedirs("experiments/training_with_vafe/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 3
+    output_size = 2
+    k = 3
+    hidden_size = 200
+    epochs = 200
+    number_training_samples = 1000
+    number_validation_samples = 200
+    random_seed = 0
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyBayes(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+        normalise_output=False,
+    )
+
+    observer = Observer(
+        observation_settings={
+            "variational_free_energy": {},
+            "weights": {"frequency": 10, "layers": [1]},
+        },
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
+
+    observer.plot_me(path=Path("experiments/training_with_vafe/"), log=True)
+
+
 def experiment_grokking_plain_with_vafe(args):
     """
     We look at the variational free energy and its components during grokking.
@@ -1270,13 +1334,13 @@ def experiment_grokking_plain_with_vafe(args):
     os.makedirs("experiments/grokking_plain_with_vafe/", exist_ok=True)
 
     weight_decay = 1e-2
-    learning_rate = 1e-2
+    learning_rate = 1e-1
     batch_size = 32
-    input_size = 3
+    input_size = 40
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 500
+    epochs = 1000
     number_training_samples = 1000
     number_validation_samples = 200
     random_seed = 0
