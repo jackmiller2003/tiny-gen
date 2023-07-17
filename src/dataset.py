@@ -323,6 +323,7 @@ class PendulumPredictionTask(Dataset):
         num_samples: int,
         time_step: float,
         random_seed: int,
+        noise: float = 0.0,
         progress_bar: bool = True,
     ) -> None:
         self.gravity = gravity
@@ -330,6 +331,7 @@ class PendulumPredictionTask(Dataset):
         self.num_samples = num_samples
         self.time_step = time_step
         self.progress_bar = progress_bar
+        self.noise = noise
 
         # Setting random seeds
         torch.manual_seed(random_seed)
@@ -358,7 +360,7 @@ class PendulumPredictionTask(Dataset):
                 t=t_span,
             )
 
-            self.data[i] = torch.tensor(sol[0])
+            self.data[i] = torch.tensor(sol[0] + self.noise * np.random.normal(0, 1, 2))
             self.targets[i] = torch.tensor(sol[1])
 
     def __len__(self) -> int:
@@ -379,8 +381,6 @@ if __name__ == "__main__":
         time_step=0.01,
         random_seed=42,
     )
-
-    print(pendulum_dataset[0])
 
     # Graph the pendulum dataset
     import matplotlib.pyplot as plt

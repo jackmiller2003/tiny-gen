@@ -27,6 +27,7 @@ from src.dataset import (
     HiddenDataset,
     PeekParityTask,
     ModuloAdditionTask,
+    PendulumPredictionTask,
     combine_datasets,
 )
 from src.model import TinyModel, ExpandableModel
@@ -1258,6 +1259,210 @@ def experiment_weight_magnitude_plot(args):
     )
 
     observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
+
+
+def experiment_train_pendulum_model(args):
+    """
+    Basic experiment to train TinyModel on a pendulum dataset.
+    """
+
+    os.makedirs("experiments/train_pendulum_model/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 2
+    output_size = 2
+    time_step = 0.01
+    hidden_size = 200
+    epochs = 500
+    number_training_samples = 200
+    number_validation_samples = 100
+
+    random_seed = 0
+
+    pendulum_dataset = PendulumPredictionTask(
+        gravity=9.8,
+        length=1,
+        num_samples=number_training_samples + number_validation_samples,
+        time_step=time_step,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        pendulum_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    observer = Observer(
+        observation_settings={
+            "weight_norm": {"frequency": 10, "layers": [1, 2]},
+            "weights": {"frequency": 10, "layers": [1, 2]},
+        },
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="mse",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
+
+    observer.plot_me(path=Path("experiments/train_pendulum_model/"), log=True)
+
+
+def experiment_train_pendulum_model_with_noise(args):
+    """
+    Basic experiment to train TinyModel on a pendulum dataset.
+    """
+
+    os.makedirs("experiments/train_pendulum_model_with_noise/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 2
+    output_size = 2
+    time_step = 0.01
+    hidden_size = 200
+    epochs = 400
+    number_training_samples = 200
+    number_validation_samples = 100
+    noise = 1e-1
+
+    random_seed = 0
+
+    pendulum_dataset = PendulumPredictionTask(
+        gravity=9.8,
+        length=1,
+        num_samples=number_training_samples + number_validation_samples,
+        time_step=time_step,
+        random_seed=random_seed,
+        noise=noise,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        pendulum_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    observer = Observer(
+        observation_settings={
+            "weight_norm": {"frequency": 10, "layers": [1, 2]},
+            "weights": {"frequency": 10, "layers": [1, 2]},
+        },
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="mse",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
+
+    observer.plot_me(
+        path=Path("experiments/train_pendulum_model_with_noise/"), log=True
+    )
+
+
+def experiment_train_pendulum_model_hidden(args):
+    """
+    Basic experiment to train TinyModel on a pendulum dataset.
+    """
+
+    os.makedirs("experiments/train_pendulum_model_hidden/", exist_ok=True)
+
+    weight_decay = 1.5e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    output_size = 2
+    time_step = 0.01
+    hidden_size = 200
+    epochs = 3000
+    number_training_samples = 350
+    number_validation_samples = 100
+    noise = 1e-1
+
+    random_seed = 0
+
+    pendulum_dataset = PendulumPredictionTask(
+        gravity=9.8,
+        length=1,
+        num_samples=number_training_samples + number_validation_samples,
+        time_step=time_step,
+        random_seed=random_seed,
+        noise=noise,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=pendulum_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    observer = Observer(
+        observation_settings={
+            "weight_norm": {"frequency": 10, "layers": [1, 2]},
+            "weights": {"frequency": 50, "layers": [1, 2]},
+        },
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="mse",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
+
+    observer.plot_me(path=Path("experiments/train_pendulum_model_hidden/"), log=True)
 
 
 if __name__ == "__main__":
