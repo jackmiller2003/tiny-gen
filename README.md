@@ -2,6 +2,8 @@
 
 This repository contains code for a Toy Model of generalisation to test claims regarding grokking, the over-parameterised regime, double descent etc.
 
+Note that pyro==1.8.0 is needed for Bayesian inference.
+
 ## Tasks
 
 We currently maintain one mathematical task to analyse generalisation. The so-called parity-prediction task.

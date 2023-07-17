@@ -1,8 +1,12 @@
 import torch
 from torch.utils.data import Dataset
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
 
-from src.model import TinyModel, MyHingeLoss
+from typing import Union
+
+from src.model import TinyModel, MyHingeLoss, TinyBayes
 from src.common import get_accuracy, get_accuracy_on_dataset
 from src.plot import plot_list_of_lines_and_labels, plot_heatmap
 
@@ -12,6 +16,9 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+
+os.sys.path.append("..")
+import external.pyvarinf.pyvarinf as pyvarinf
 
 
 class Observer:
@@ -49,6 +56,10 @@ class Observer:
                 layers = setting["layers"]
                 for layer in layers:
                     self.weights[layer] = []
+            elif observation == "variational_free_energy":
+                self.variational_free_energy = []
+                self.complexity_loss = []
+                self.error_loss = []
 
     def record_training_loss(self, loss: float) -> None:
         self.training_losses.append(loss)
@@ -69,10 +80,10 @@ class Observer:
         """
 
         # The model must have a look method which maps from layer number to weights
-        assert hasattr(model, "look")
 
         for observation, setting in self.observation_settings.items():
             if observation == "weight_norm":
+                assert hasattr(model, "look")
                 layers = setting["layers"]
                 norms = [np.linalg.norm(model.look(layer), ord=2) for layer in layers]
                 [
@@ -80,6 +91,7 @@ class Observer:
                     for layer, norm in zip(layers, norms)
                 ]
             elif observation == "weights":
+                assert hasattr(model, "look")
                 layers = setting["layers"]
                 [self.weights[layer].append(model.look(layer)) for layer in layers]
 
@@ -154,11 +166,24 @@ class Observer:
             log=log,
         )
 
+        # --- Variational information --- #
+
+        if "variational_free_energy" in self.observation_settings:
+            plot_list_of_lines_and_labels(
+                [
+                    (self.variational_free_energy, "Variational Free Energy"),
+                    (self.complexity_loss, "Complexity Loss"),
+                    (self.error_loss, "Error Loss"),
+                ],
+                path=path / Path("variational_free_energy" + file_extension),
+                log=log,
+            )
+
 
 def train_model(
     training_dataset: Dataset,
     validation_dataset: Dataset,
-    model: TinyModel,
+    model: Union[TinyModel, TinyBayes],
     learning_rate: float,
     weight_decay: float,
     epochs: int,
@@ -172,6 +197,7 @@ def train_model(
     if observer is None:
         observer = Observer()
 
+    # Setup the data loaders
     train_loader = torch.utils.data.DataLoader(
         dataset=training_dataset,
         batch_size=batch_size,
@@ -190,6 +216,7 @@ def train_model(
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    # Decide the loss function
     if loss_function_label == "hinge":
         print("Using hinge loss")
         loss_function = MyHingeLoss()
@@ -209,12 +236,21 @@ def train_model(
     else:
         raise ValueError("Invalid optimiser.")
 
+    vafe = False
+    if "variational_free_energy" in observer.observation_settings.keys():
+        vafe = True
+
+    # Train loop
     for epoch in tqdm(
         range(epochs),
         disable=not progress_bar,
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
     ):
         total_loss = total_accuracy = number_batches = 0
+
+        if vafe:
+            total_vafe = 0
+            total_complexity = 0
 
         if rate_limit is not None:
             for layer, frequency in rate_limit:
@@ -226,10 +262,17 @@ def train_model(
         for batch in train_loader:
             inputs = batch[0].contiguous().to(device, non_blocking=False)
             targets = batch[1].contiguous().to(device, non_blocking=False)
-
             predictions = model(inputs)
 
-            loss = loss_function(predictions, targets)
+            if vafe:
+                loss_error = loss_function(predictions, targets)
+                complexity_loss = model.kl / len(train_loader.dataset)
+                loss = loss_error + complexity_loss
+
+                total_vafe += loss_error.item() + complexity_loss.item()
+                total_complexity += complexity_loss.item()
+            else:
+                loss = loss_function(predictions, targets)
 
             total_loss += loss.item()
             accuracy = get_accuracy(predictions, targets)
@@ -243,6 +286,11 @@ def train_model(
 
         observer.record_training_loss(total_loss / number_batches)
         observer.record_training_accuracy(total_accuracy / number_batches)
+
+        if vafe:
+            observer.variational_free_energy.append(total_vafe / number_batches)
+            observer.complexity_loss.append(total_complexity / number_batches)
+            observer.error_loss.append((total_vafe - total_complexity) / number_batches)
 
         total_val_loss = total_val_accuracy = number_val_batches = 0
 
