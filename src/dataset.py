@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import TensorDataset
 from typing import Tuple
 import random
 import numpy as np
+from sympy import mod_inverse
 
 
 class ParityTask(Dataset):
@@ -72,6 +75,9 @@ class ParityTask(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "ParityTask"
 
 
 class PeekParityTask(Dataset):
@@ -146,6 +152,9 @@ class PeekParityTask(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.data[idx], self.targets[idx]
 
+    def __name__(self) -> str:
+        return "PeekParityTask"
+
 
 class ModuloAdditionTask(Dataset):
     """
@@ -200,6 +209,9 @@ class ModuloAdditionTask(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "ModuloAdditionTask"
 
 
 class HiddenDataset(Dataset):
@@ -305,3 +317,323 @@ def combine_datasets(
         combined_labels = torch.stack(combined_labels)
 
     return TensorDataset(combined_data, combined_labels)
+
+
+"""
+Choosing 5 random datasets from appendix A1.1 inside https://arxiv.org/abs/2201.02177.
+
+```
+Python script:
+
+import random
+
+# Create a list of 12 numbers
+numbers = list(range(1, 13))
+
+# Choose 5 numbers without replacement
+chosen_numbers = random.sample(numbers, 5)
+
+chosen_numbers
+```
+
+Resulting choices: [12, 3, 2, 7, 6]
+"""
+
+
+class ModuloSubtractionTask(Dataset):
+    """
+    The modulo subtraction task takes in binary sequences and provides
+    the modulo subtraction of the sequence as the target.
+
+    Dataset 2 from https://arxiv.org/abs/2201.02177.
+    """
+
+    def __init__(self, modulo: int, num_samples: int, random_seed: int) -> None:
+        self.modulo = modulo
+        self.num_samples = num_samples
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the modulo subtraction task.
+
+        The input data should be a sequence of length 2*modulo
+        representing x and y in the equation
+        x-y = c (mod modulo)
+
+        Here x and y are one-hot encoded.
+        """
+
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
+
+        for i in range(0, self.num_samples):
+            x = random.randint(0, self.modulo - 1)
+            y = random.randint(0, self.modulo - 1)
+            c = (x - y) % self.modulo
+
+            x_zeros = torch.zeros(self.modulo)
+            y_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
+
+            x_zeros[x] = 1
+            y_zeros[y] = 1
+            c_zeros[c] = 1
+
+            self.data[i] = torch.cat((x_zeros, y_zeros))
+            self.targets[i] = c_zeros
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "ModuloSubtractionTask"
+
+
+class ModuloDivisionTask(Dataset):
+    """
+    The modulo division task takes in binary sequences and provides
+    the modulo division of the sequence as the target.
+
+    Dataset 3 from https://arxiv.org/abs/2201.02177.
+    """
+
+    def __init__(self, modulo: int, num_samples: int, random_seed: int) -> None:
+        self.modulo = modulo
+        self.num_samples = num_samples
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the modulo division task.
+
+        The input data should be a sequence of length 2*modulo
+        representing x and y in the equation
+        x/y = c (mod modulo)
+
+        Here x and y are one-hot encoded.
+        """
+
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
+
+        for i in range(0, self.num_samples):
+            x = random.randint(0, self.modulo - 1)
+            y = random.randint(1, self.modulo - 1)  # y should be in the range 1 to p-1
+            y_inv = mod_inverse(y, self.modulo)
+            c = (x * y_inv) % self.modulo
+
+            x_zeros = torch.zeros(self.modulo)
+            y_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
+
+            x_zeros[x] = 1
+            y_zeros[y] = 1
+            c_zeros[c] = 1
+
+            self.data[i] = torch.cat((x_zeros, y_zeros))
+            self.targets[i] = c_zeros
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "ModuloDivisionTask"
+
+
+class PolynomialTask(Dataset):
+    """
+    The polynomial task takes in binary sequences and provides
+    the polynomial operation of the sequence as the target.
+
+    Dataset 6 from https://arxiv.org/abs/2201.02177.
+    """
+
+    def __init__(self, modulo: int, num_samples: int, random_seed: int) -> None:
+        self.modulo = modulo
+        self.num_samples = num_samples
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the polynomial task.
+
+        The input data should be a sequence of length 2*modulo
+        representing x and y in the equation
+        x^2 + xy + y^2 = c
+
+        Here x and y are one-hot encoded.
+        """
+
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
+
+        for i in range(0, self.num_samples):
+            x = random.randint(0, self.modulo - 1)
+            y = random.randint(0, self.modulo - 1)
+            c = (x**2 + x * y + y**2) % self.modulo
+
+            x_zeros = torch.zeros(self.modulo)
+            y_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
+
+            x_zeros[x] = 1
+            y_zeros[y] = 1
+            c_zeros[c] = 1
+
+            self.data[i] = torch.cat((x_zeros, y_zeros))
+            self.targets[i] = c_zeros
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "PolynomialTask"
+
+
+class PolynomialTaskTwo(Dataset):
+    """
+    The polynomial task takes in binary sequences and provides
+    the polynomial operation of the sequence as the target.
+    """
+
+    def __init__(self, modulo: int, num_samples: int, random_seed: int) -> None:
+        self.modulo = modulo
+        self.num_samples = num_samples
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the polynomial task.
+
+        The input data should be a sequence of length 2*modulo
+        representing x and y in the equation
+        x^2 + xy + y^2 + x = c
+
+        Here x and y are one-hot encoded.
+        """
+
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
+
+        for i in range(0, self.num_samples):
+            x = random.randint(0, self.modulo - 1)
+            y = random.randint(0, self.modulo - 1)
+            c = (x**2 + x * y + y**2 + x) % self.modulo
+
+            x_zeros = torch.zeros(self.modulo)
+            y_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
+
+            x_zeros[x] = 1
+            y_zeros[y] = 1
+            c_zeros[c] = 1
+
+            self.data[i] = torch.cat((x_zeros, y_zeros))
+            self.targets[i] = c_zeros
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "PolynomialTaskTwo"
+
+
+class ModuloMultiplicationDoubleXTask(Dataset):
+    """
+    The modulo multiplication task takes in binary sequences x and y and provides
+    the modulo multiplication of the sequence x * y * x as the target.
+
+    Dataset 12 from https://arxiv.org/abs/2201.02177.
+    """
+
+    def __init__(self, modulo: int, num_samples: int, random_seed: int) -> None:
+        self.modulo = modulo
+        self.num_samples = num_samples
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the modulo multiplication task.
+
+        The input data should be a sequence of length 2*modulo
+        representing x and y in the equation
+        x*y*x = c (mod modulo)
+
+        Here x, y and z are one-hot encoded.
+        """
+
+        self.data = torch.zeros((self.num_samples, 2 * self.modulo))
+        self.targets = torch.zeros((self.num_samples, self.modulo))
+
+        for i in range(0, self.num_samples):
+            x = random.randint(0, self.modulo - 1)
+            y = random.randint(0, self.modulo - 1)
+            c = (x * y * x) % self.modulo
+
+            x_zeros = torch.zeros(self.modulo)
+            y_zeros = torch.zeros(self.modulo)
+            c_zeros = torch.zeros(self.modulo)
+
+            x_zeros[x] = 1
+            y_zeros[y] = 1
+            c_zeros[c] = 1
+
+            self.data[i] = torch.cat((x_zeros, y_zeros))
+            self.targets[i] = c_zeros
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "ModuloMultiplicationDoubleXTask"

@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
+import gpytorch
+from gpytorch.constraints import Positive
 
 import numpy.typing as npt
 import numpy as np
 import random
+import math
 
 
 class TinyModel(nn.Module):
@@ -198,3 +203,96 @@ class MyHingeLoss(torch.nn.Module):
         hinge_loss[hinge_loss < 0] = 0
 
         return hinge_loss.mean()
+
+
+class ExactGPModel(gpytorch.models.ExactGP):
+    def __init__(self, x_train, y_train, likelihood):
+        N, D = x_train.size(0), x_train.size(1)
+        super(ExactGPModel, self).__init__(x_train, y_train, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(
+                ard_num_dims=D,
+                lengthscale_constraint=Positive(torch.exp, torch.log),
+            ),
+            outputscale_constraint=Positive(torch.exp, torch.log),
+        )
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+def mvn_log_prob(dist, value: torch.Tensor) -> torch.Tensor:
+    r"""
+    See :py:meth:`torch.distributions.Distribution.log_prob
+    <torch.distributions.distribution.Distribution.log_prob>`.
+    """
+    if gpytorch.settings.fast_computations.log_prob.off():
+        return super(type(dist), dist).log_prob(value)
+
+    if dist._validate_args:
+        dist._validate_sample(value)
+
+    mean, covar = dist.loc, dist.lazy_covariance_matrix
+    diff = value - mean
+
+    # Repeat the covar to match the batch shape of diff
+    if diff.shape[:-1] != covar.batch_shape:
+        if len(diff.shape[:-1]) < len(covar.batch_shape):
+            diff = diff.expand(covar.shape[:-1])
+        else:
+            padded_batch_shape = (
+                *(1 for _ in range(diff.dim() + 1 - covar.dim())),
+                *covar.batch_shape,
+            )
+            covar = covar.repeat(
+                *(
+                    diff_size // covar_size
+                    for diff_size, covar_size in zip(
+                        diff.shape[:-1], padded_batch_shape
+                    )
+                ),
+                1,
+                1,
+            )
+
+    # Get log determininant and first part of quadratic form
+    covar = covar.evaluate_kernel()
+    inv_quad, logdet = covar.inv_quad_logdet(
+        inv_quad_rhs=diff.unsqueeze(-1), logdet=True
+    )
+
+    res = -0.5 * sum([inv_quad, logdet, diff.size(-1) * math.log(2 * math.pi)])
+    return res, -0.5 * inv_quad, -0.5 * logdet
+
+
+class ExactMarginalLikelihood(gpytorch.mlls.ExactMarginalLogLikelihood):
+    def forward(self, function_dist, target, *params):
+        r"""
+        Computes the MLL given :math:`p(\mathbf f)` and :math:`\mathbf y`.
+
+        :param ~gpytorch.distributions.MultivariateNormal function_dist: :math:`p(\mathbf f)`
+            the outputs of the latent function (the :obj:`gpytorch.models.ExactGP`)
+        :param torch.Tensor target: :math:`\mathbf y` The target values
+        :rtype: torch.Tensor
+        :return: Exact MLL. Output shape corresponds to batch shape of the model/input data.
+        """
+        if not isinstance(function_dist, gpytorch.distributions.MultivariateNormal):
+            raise RuntimeError(
+                "ExactMarginalLogLikelihood can only operate on Gaussian random variables"
+            )
+
+        # Get the log prob of the marginal distribution
+        output = self.likelihood(function_dist, *params)
+        res, fit_term, complexity_term = mvn_log_prob(output, target)
+        res = self._add_other_terms(res, params)
+
+        # Scale by the amount of data we have
+        num_data = function_dist.event_shape.numel()
+        return (
+            res.div_(num_data),
+            fit_term.div_(num_data),
+            complexity_term.div_(num_data),
+        )
