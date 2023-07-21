@@ -14,6 +14,8 @@ import numpy as np
 import numpy.typing as npt
 from typing import Callable
 
+from copy import deepcopy
+
 
 class Observer:
     """
@@ -50,6 +52,8 @@ class Observer:
                 layers = setting["layers"]
                 for layer in layers:
                     self.weights[layer] = []
+            elif observation == "model":
+                self.models = []
 
     def record_training_loss(self, loss: float) -> None:
         self.training_losses.append(loss)
@@ -83,6 +87,8 @@ class Observer:
             elif observation == "weights":
                 layers = setting["layers"]
                 [self.weights[layer].append(model.look(layer)) for layer in layers]
+            elif observation == "model":
+                self.models.append(deepcopy(model))
 
     def observe_generalisation(self, model: nn.Module) -> None:
         for name, dataset in self.generalisation_datasets.items():
@@ -236,11 +242,12 @@ def train_model(
 
             loss = loss_function(predictions, targets)
 
+            accuracy = get_accuracy(predictions, targets)
+
             if not weight_decay_function is None:
-                loss += weight_decay_function(model)
+                loss += weight_decay_function(model, loss, accuracy)
 
             total_loss += loss.item()
-            accuracy = get_accuracy(predictions, targets)
 
             total_accuracy += accuracy
             number_batches += 1
