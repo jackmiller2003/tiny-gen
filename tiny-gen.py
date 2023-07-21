@@ -1265,7 +1265,7 @@ def experiment_training_with_vafe(args):
 
     os.makedirs("experiments/training_with_vafe/", exist_ok=True)
 
-    weight_decay = 1e-2
+    weight_decay = 0
     learning_rate = 1e-1
     batch_size = 32
     input_size = 3
