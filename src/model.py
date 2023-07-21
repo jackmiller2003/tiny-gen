@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +12,7 @@ import os
 os.sys.path.append("..")
 
 import external.vinn.vinn as vinn
+from src.vbnn_layers import GaussianLinear
 
 
 class TinyModel(nn.Module):
@@ -113,7 +116,7 @@ class TinyModel(nn.Module):
         return x
 
 
-class TinyBayes(vinn.Module):
+class TinyBayes(nn.Module):
     """
     Small BNN for testing generalisation
     """
@@ -127,6 +130,11 @@ class TinyBayes(vinn.Module):
         normalise_output: bool = False,
         verbose: bool = True,
     ):
+        # Sets all random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
+        
         super(TinyBayes, self).__init__()
 
         self.input_size = input_size
@@ -134,8 +142,11 @@ class TinyBayes(vinn.Module):
         self.output_size = output_size
         self.normalise_output = normalise_output
 
-        self.fc1 = vinn.Linear(self.input_size, self.hidden_layer_size)
-        self.fc2 = vinn.Linear(self.hidden_layer_size, self.output_size, bias=True)
+        fc1 = GaussianLinear([self.input_size, self.hidden_layer_size])
+        fc2 = GaussianLinear([self.hidden_layer_size, self.output_size])
+        self.layers = nn.ModuleList()
+        self.layers.append(fc1)
+        self.layers.append(fc2)
 
         # Determine if there is a GPU available and if so, move the model to GPU
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -144,18 +155,25 @@ class TinyBayes(vinn.Module):
         if verbose:
             print(f"Model initialised on device: {self.device}")
 
-    def forward(self, x, y=None):
+    def forward(self, x, y=None, local=True):
         """
         Completes a forward pass of the network
         """
 
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-
+        inputs = x
+        for layer in self.layers:
+            a = layer.forward(inputs, local)
+            inputs = torch.relu(a)
         if self.normalise_output:
-            x = F.log_softmax(x, dim=1)
+            a = F.log_softmax(a, dim=1)
 
-        return x
+        return a
+
+    def kl(self):
+        kl = 0
+        for layer in self.layers:
+            kl += layer.compute_variational_kl_term()
+        return kl
 
     def look(self, layer: int) -> npt.NDArray[np.float64]:
         """
@@ -163,9 +181,9 @@ class TinyBayes(vinn.Module):
         """
 
         if layer == 1:
-            return self.fc1.weight_sample().cpu().detach().numpy()
+            return self.layers[0].weight_sample()[0].cpu().detach().numpy()
         elif layer == 2:
-            return self.fc2.weight_sample().cpu().detach().numpy()
+            return self.layers[1].weight_sample()[0].cpu().detach().numpy()
         else:
             raise ValueError("Invalid layer.")
 

@@ -1272,7 +1272,7 @@ def experiment_training_with_vafe(args):
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 200
+    epochs = 500
     number_training_samples = 1000
     number_validation_samples = 200
     random_seed = 0
@@ -1333,7 +1333,7 @@ def experiment_grokking_plain_with_vafe(args):
 
     os.makedirs("experiments/grokking_plain_with_vafe/", exist_ok=True)
 
-    weight_decay = 1e-2
+    weight_decay = 0
     learning_rate = 1e-1
     batch_size = 32
     input_size = 40

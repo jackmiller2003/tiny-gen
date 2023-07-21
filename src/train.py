@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 from torch.utils.data import Dataset
 import torch.nn as nn
@@ -263,15 +265,16 @@ def train_model(
 
             if vafe:
                 loss_error = loss_function(predictions, targets)
-                complexity_loss = model.kl / len(train_loader.dataset)
+                complexity_loss = model.kl() / len(train_loader.dataset)
                 loss = loss_error + complexity_loss
+                # loss = loss_error
 
                 total_vafe += loss_error.item() + complexity_loss.item()
                 total_complexity += complexity_loss.item()
             else:
                 loss = loss_function(predictions, targets)
 
-            total_loss += loss.item()
+            total_loss += loss.item() # TODO: should this be loss_error.item()
             accuracy = get_accuracy(predictions, targets)
 
             total_accuracy += accuracy
@@ -303,7 +306,6 @@ def train_model(
                 total_val_loss += float(validation_loss.item())
                 number_val_batches += 1
                 total_val_accuracy += get_accuracy(predictions, targets)
-
         observer.record_validation_loss(total_val_loss / number_val_batches)
         observer.record_validation_accuracy(total_val_accuracy / number_val_batches)
 
