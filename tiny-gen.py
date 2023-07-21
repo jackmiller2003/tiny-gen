@@ -21,6 +21,7 @@ import argparse
 import numpy as np
 from pathlib import Path
 import os
+from functools import partial
 
 from src.dataset import (
     ParityTask,
@@ -38,8 +39,11 @@ from src.model import TinyModel, ExpandableModel
 from src.train import train_model, Observer
 from src.plot import (
     plot_validation_and_accuracy_from_observers,
+    plot_2D_loss_surface_with_random_directions,
 )
-from src.common import get_accuracy_on_dataset
+from src.common import weight_decay_LP, optimal_set_weight_decay
+
+from copy import deepcopy
 
 
 def experiment_grokking_plain(args):
@@ -1207,6 +1211,8 @@ def experiment_weight_magnitude_plot(args):
     large scale change in the weights?
     """
 
+    os.makedirs("experiments/weight_magnitude_plot/", exist_ok=True)
+
     weight_decay = 1e-2
     learning_rate = 1e-1
     batch_size = 32
@@ -1214,7 +1220,7 @@ def experiment_weight_magnitude_plot(args):
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 300
+    epochs = 5000
     number_training_samples = 700
     number_validation_samples = 200
 
@@ -1263,6 +1269,312 @@ def experiment_weight_magnitude_plot(args):
     )
 
     observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
+
+
+def experiment_polynomial_weight_decay(args):
+    """
+    In this experiment we see whether different functions for the weight decay
+    impacts grokking as hypothesised in: https://www.beren.io/2022-01-11-Grokking-Grokking/.
+    """
+
+    os.makedirs("experiments/polynomial_weight_decay/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    output_size = 2
+    k = 3
+    hidden_size = 1000
+    epochs = 200
+    training_dataset_size = 1000
+    number_validation_samples = 100
+    random_seed = 0
+
+    polynomial_degree = [2, 3, 4, 5]
+
+    observers = []
+
+    for degree in polynomial_degree:
+        entire_dataset = ParityTask(
+            sequence_length=k,
+            num_samples=training_dataset_size + number_validation_samples,
+            random_seed=random_seed,
+        )
+
+        hidden_dataset = HiddenDataset(
+            dataset=entire_dataset,
+            total_length=input_size,
+            random_seed=random_seed,
+        )
+
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            hidden_dataset,
+            [training_dataset_size, number_validation_samples],
+        )
+
+        model = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=output_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            weight_decay_function=partial(
+                weight_decay_LP, lambda_=weight_decay, degree=degree
+            ),
+        )
+
+        observers.append(observer)
+
+    plot_validation_and_accuracy_from_observers(
+        observers=observers,
+        label_list=polynomial_degree,
+        path=Path("experiments/polynomial_weight_decay/"),
+    )
+
+
+def experiment_optimal_set_weight_decay(args):
+    """
+    In this experiment we try and validate the following theory of Grokking:
+
+    Grokking is a phenomenon whereby the path to an optimal set where the training
+    loss is near-zero is 'easy' for SGD. Then when in this optimal set, the path to
+    a generalisable setting is 'harder' guided only by weight decay.
+
+    Hopefully we can improve this by increasing weight decay in this region of
+    the optimal set.
+    """
+
+    os.makedirs("experiments/optimal_set_weight_decay/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    output_size = 2
+    k = 3
+    hidden_size = 1000
+    epochs = 300
+    number_training_samples = 600
+    number_validation_samples = 500
+    random_seed = 0
+
+    penalty_factor = [0, 1e-1]
+
+    observers = []
+
+    for factor in penalty_factor:
+        entire_dataset = ParityTask(
+            sequence_length=k,
+            num_samples=number_training_samples + number_validation_samples,
+            random_seed=random_seed,
+        )
+
+        hidden_dataset = HiddenDataset(
+            dataset=entire_dataset,
+            total_length=input_size,
+            random_seed=random_seed,
+        )
+
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            hidden_dataset,
+            [number_training_samples, number_validation_samples],
+        )
+
+        model = TinyModel(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=output_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            weight_decay_function=partial(
+                optimal_set_weight_decay,
+                lambda_=weight_decay,
+                gamma_=factor,
+                accuracy_cutoff=0.99,
+            ),
+        )
+
+        observers.append(observer)
+
+    plot_validation_and_accuracy_from_observers(
+        observers=observers,
+        label_list=penalty_factor,
+        path=Path("experiments/optimal_set_weight_decay/"),
+    )
+
+
+def experiment_2D_loss_surface(args):
+    """
+    Testing 2D loss surface plotting.
+    """
+    os.makedirs("experiments/2D_loss_surface/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    output_size = 2
+    k = 3
+    hidden_size = 1000
+    epochs = 10
+    number_training_samples = 1000
+    number_validation_samples = 500
+    random_seed = 0
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    init_model = deepcopy(model)
+
+    if os.path.exists("models/2D_loss_surface_model.pt"):
+        model.load_state_dict(torch.load("models/2D_loss_surface_model.pt"))
+    else:
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+    torch.save(model.state_dict(), "models/2D_loss_surface_model.pt")
+
+    plot_2D_loss_surface_with_random_directions(
+        initial_model=init_model,
+        trained_model=model,
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        weight_decay=weight_decay,
+    )
+
+
+def experiment_2D_loss_surface_with_trajectory(args):
+    """
+    Testing 2D loss surface plotting.
+    """
+    os.makedirs("experiments/2D_loss_surface_with_trajectory/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    output_size = 2
+    k = 3
+    hidden_size = 10
+    epochs = 200
+    number_training_samples = 1000
+    number_validation_samples = 500
+    random_seed = 0
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    init_model = deepcopy(model)
+
+    observer = Observer(
+        observation_settings={"model": {}, "weights": {"frequency": 10, "layers": [1]}},
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=observer,
+    )
+
+    observer.plot_me(
+        path=Path("experiments/2D_loss_surface_with_trajectory/"), log=False
+    )
+
+    # torch.save(model.state_dict(), "models/2D_loss_surface_model.pt")
+
+    plot_2D_loss_surface_with_random_directions(
+        initial_model=observer.models[75],
+        trained_model=model,
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        weight_decay=weight_decay,
+        models=observer.models[75:],
+    )
 
 
 def experiment_training_on_openai_datasets(args):

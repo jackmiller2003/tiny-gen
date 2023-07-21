@@ -12,6 +12,9 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+from typing import Callable
+
+from copy import deepcopy
 
 
 class Observer:
@@ -49,6 +52,8 @@ class Observer:
                 layers = setting["layers"]
                 for layer in layers:
                     self.weights[layer] = []
+            elif observation == "model":
+                self.models = []
 
     def record_training_loss(self, loss: float) -> None:
         self.training_losses.append(loss)
@@ -82,6 +87,8 @@ class Observer:
             elif observation == "weights":
                 layers = setting["layers"]
                 [self.weights[layer].append(model.look(layer)) for layer in layers]
+            elif observation == "model":
+                self.models.append(deepcopy(model))
 
     def observe_generalisation(self, model: nn.Module) -> None:
         for name, dataset in self.generalisation_datasets.items():
@@ -165,6 +172,7 @@ def train_model(
     batch_size: int,
     loss_function_label: str,
     optimiser_function_label: str,
+    weight_decay_function: Callable = None,
     progress_bar: bool = True,
     rate_limit: list[tuple] = None,
     observer: Observer = None,
@@ -203,6 +211,9 @@ def train_model(
         raise ValueError("Invalid loss function.")
 
     if optimiser_function_label == "sgd":
+        if not weight_decay_function is None:
+            weight_decay = 0
+
         optimiser = torch.optim.SGD(
             model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
@@ -231,8 +242,12 @@ def train_model(
 
             loss = loss_function(predictions, targets)
 
-            total_loss += loss.item()
             accuracy = get_accuracy(predictions, targets)
+
+            if not weight_decay_function is None:
+                loss += weight_decay_function(model, loss, accuracy)
+
+            total_loss += loss.item()
 
             total_accuracy += accuracy
             number_batches += 1
