@@ -131,6 +131,17 @@ class Observer:
             log=log,
         )
 
+        # --- Likelihood information --- #
+
+        plot_list_of_lines_and_labels(
+            [
+                (self.training_log_probs, "Training Log Prob"),
+                (self.validation_log_probs, "Validation Log Prob"),
+            ],
+            path=path / Path("log_prob" + file_extension),
+            log=log,
+        )
+
         # --- Weight information --- #
 
         plot_list_of_lines_and_labels(
@@ -299,17 +310,19 @@ def train_GP_model(
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    x_train = torch.tensor([torch.tensor(x) for x, y in training_dataset]).to(device)
-    y_train = torch.tensor([torch.tensor(y) for x, y in training_dataset]).to(device)
+    x_train = torch.tensor([x.clone().detach() for x, y in training_dataset]).to(device)
+    y_train = torch.tensor([y.clone().detach() for x, y in training_dataset]).to(device)
 
-    x_valid = torch.tensor([torch.tensor(x) for x, y in validation_dataset]).to(device)
-    y_valid = torch.tensor([torch.tensor(y) for x, y in validation_dataset]).to(device)
+    x_valid = torch.tensor([x.clone().detach() for x, y in validation_dataset]).to(
+        device
+    )
+    y_valid = torch.tensor([y.clone().detach() for x, y in validation_dataset]).to(
+        device
+    )
 
     marginal_log_likelihood = gpytorch.mlls.ExactMarginalLogLikelihood(
         likelihood, model
     )
-
-    model.train()
 
     for i in tqdm(range(epochs), disable=not progress_bar, desc="Training GP model"):
         optimiser.zero_grad()
@@ -324,8 +337,10 @@ def train_GP_model(
         valid_preds = likelihood(valid_output)
         model.train()
 
-        training_loss = loss_function(train_output.mean, y_train).detach().cpu()
-        validation_loss = loss_function(valid_output.mean, y_valid).detach().cpu()
+        training_loss = loss_function(train_output.mean, y_train).mean().detach().cpu()
+        validation_loss = (
+            loss_function(valid_output.mean, y_valid).mean().detach().cpu()
+        )
 
         observer.record_training_loss(training_loss)
         observer.record_validation_loss(validation_loss)
@@ -365,6 +380,10 @@ def setup_optimiser_and_loss(
 
     if optimiser_function_label == "sgd":
         optimiser = torch.optim.SGD(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+    elif optimiser_function_label == "adam":
+        optimiser = torch.optim.Adam(
             model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
     else:

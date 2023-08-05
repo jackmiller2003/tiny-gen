@@ -1414,7 +1414,7 @@ def experiment_grokking_plain_gp_regression():
 
     random_seed = 42
     learning_rate = 1e-1
-    epochs = 500
+    epochs = 300
     length_scale = 1e-3
 
     # Setting seeds
@@ -1425,10 +1425,12 @@ def experiment_grokking_plain_gp_regression():
         total_length=100,
         x_range=(-1.5, 1.5),
         amplitude=1,
-        frequency=1 / 3,
+        frequency=1 / (np.pi),
         phase=0,
-        noise=0.1,
+        x_noise=0.1,
+        y_noise=0.1,
         random_seed=random_seed,
+        random_x=True,
     )
 
     training_dataset, validation_dataset = torch.utils.data.random_split(
@@ -1436,18 +1438,24 @@ def experiment_grokking_plain_gp_regression():
         [50, 50],
     )
 
-    train_inputs = torch.tensor([torch.tensor(x) for x, y in training_dataset])
-    train_targets = torch.tensor([torch.tensor(y) for x, y in training_dataset])
+    train_inputs = torch.tensor(
+        [x.clone().detach().unsqueeze(0) for x, y in training_dataset]
+    )
+    train_targets = torch.tensor(
+        [y.clone().detach().unsqueeze(0) for x, y in training_dataset]
+    )
 
     num_dimensions = 1
 
     plt.figure()
-    plt.plot([x for x, y in training_dataset], [y for x, y in training_dataset], "+k")
+    plt.plot(train_inputs, train_targets, "+k")
     plt.savefig("tmp/gpr_data.png")
 
     # initialize likelihood and model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device)
+    train_inputs.to(device)
+    train_targets.to(device)
     model = ExactGPModel(
         train_inputs=train_inputs,
         train_targets=train_targets,
@@ -1466,36 +1474,11 @@ def experiment_grokking_plain_gp_regression():
         learning_rate=learning_rate,
         epochs=epochs,
         loss_function_label="mse",
-        optimiser_function_label="sgd",
+        optimiser_function_label="adam",
         likelihood=likelihood,
     )
 
     observer.plot_me(path=Path("experiments/grokking_plain_gp_regression/"), log=False)
-
-    # plt.figure()
-    # plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="train")
-    # plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="validation")
-    # plt.xscale("log")
-    # plt.xlabel("epoch")
-    # plt.ylabel("mse")
-    # plt.legend()
-    # plt.savefig("tmp/gpr_mse.png")
-
-    # plt.figure()
-    # plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
-    # plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
-    # plt.xscale("log")
-    # plt.xlabel("epoch")
-    # plt.ylabel("log prob")
-    # plt.legend()
-    # plt.savefig("tmp/gpr_lp.png")
-
-    # plt.figure()
-    # plt.plot(np.arange(epochs) + 1, vfes, "-k")
-    # plt.xscale("log")
-    # plt.xlabel("epoch")
-    # plt.ylabel("NLML")
-    # plt.savefig("tmp/gpr_lml.png")
 
 
 def experiment_grokking_gp_regression():

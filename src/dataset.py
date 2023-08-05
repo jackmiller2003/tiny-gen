@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import TensorDataset
-from typing import Tuple
+from typing import Tuple, Optional
 import random
 import numpy as np
 from sympy import mod_inverse
@@ -546,16 +546,20 @@ class NoisySineWaveTask(Dataset):
         amplitude: float,
         frequency: float,
         phase: float,
-        noise: float,
+        x_noise: float,
+        y_noise: float,
         random_seed: int,
+        random_x: Optional[bool] = True,
     ) -> None:
         self.total_length = total_length
         self.x_range = x_range
         self.amplitude = amplitude
         self.frequency = frequency
         self.phase = phase
-        self.noise = noise
+        self.x_noise = x_noise
+        self.y_noise = y_noise
         self.random_seed = random_seed
+        self.random_x = random_x
 
         # Setting random seeds
         torch.manual_seed(self.random_seed)
@@ -569,11 +573,22 @@ class NoisySineWaveTask(Dataset):
         Generates a noisy sine wave.
         """
 
-        x = np.linspace(self.x_range[0], self.x_range[1], self.total_length)
+        total_x_range = self.x_range[1] - self.x_range[0]
+
+        if self.random_x:
+            x = np.random.rand(self.total_length) * total_x_range - total_x_range / 2
+
+        else:
+            x = np.linspace(
+                self.x_range[0], self.x_range[1], self.total_length
+            ) + self.x_noise * np.random.randn(self.total_length)
+
         y = self.amplitude * np.sin(2 * np.pi * self.frequency * x + self.phase)
 
         self.data = torch.tensor(x)
-        self.targets = torch.tensor(y + self.noise * np.random.randn(self.total_length))
+        self.targets = torch.tensor(
+            y + self.y_noise * np.random.randn(self.total_length)
+        )
 
     def __len__(self) -> int:
         return self.total_length
