@@ -214,111 +214,6 @@ class ModuloAdditionTask(Dataset):
         return "ModuloAdditionTask"
 
 
-class HiddenDataset(Dataset):
-    """
-    Hides a dataset by increasing the sequence length with random
-    0s and 1s at the end of the sequence. The total length of the
-    sequence is given by the hidden_length parameter.
-    """
-
-    def __init__(self, dataset: Dataset, total_length: int, random_seed: int) -> None:
-        self.dataset = dataset
-        self.total_length = total_length
-        self.random_seed = random_seed
-
-        # Setting random seeds
-        torch.manual_seed(self.random_seed)
-        np.random.seed(self.random_seed)
-        random.seed(self.random_seed)
-
-        # Esnure the total length is greater than the sequence length
-        assert self.total_length >= len(dataset[0][0])
-
-        self.generate_new_examples()
-
-    def generate_new_examples(self) -> None:
-        new_examples = []
-        new_targets = []
-
-        for data_point, target in self.dataset:
-            new_data_point = torch.zeros(self.total_length)
-            new_data_point[: len(data_point)] = data_point[: len(data_point)]
-            new_data_point[len(data_point) :] = torch.randint(
-                0, 2, (self.total_length - len(data_point), 1)
-            ).squeeze()
-            new_examples.append(new_data_point)
-            new_targets.append(target)
-
-        self.data = torch.stack(new_examples)
-        self.targets = torch.stack(new_targets)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.data[idx], self.targets[idx]
-
-
-def combine_datasets(
-    dataset1: Dataset, dataset2: Dataset, individual: bool = True
-) -> Dataset:
-    """
-    Combine two pytorch datasets such that the combined dataset has an
-    input space of input(dataset1) + input(dataset2) and an output
-    space of output(dataset1) + output(dataset2)
-
-    From GPT-4...
-    """
-    combined_data = []
-    combined_labels = []
-
-    if individual:
-        # Iterate over first dataset and add examples. Just pad with zeros
-        # for the second dataset.
-
-        total_input_zeros = len(dataset2[0][0]) + len(dataset1[0][0])
-        total_label_zeros = len(dataset2[0][1]) + len(dataset1[0][1])
-
-        for input, target in dataset1:
-            zeros = torch.zeros(total_input_zeros)
-            # print(f"input.shape: {input.shape}")
-            # print(f"zeros.shape: {zeros.shape}")
-            # print(zeros[: input.shape[0]])
-            zeros[: input.shape[0]] += input
-            combined_data.append(zeros)
-
-            zeros = torch.zeros(total_label_zeros)
-            zeros[: target.shape[0]] += target
-            combined_labels.append(zeros)
-
-        for inputs, targets in dataset2:
-            zeros = torch.zeros(total_input_zeros)
-            zeros[dataset1[0][0].shape[0] :] = inputs
-            combined_data.append(zeros)
-
-            zeros = torch.zeros(total_label_zeros)
-            zeros[dataset1[0][1].shape[0] :] = targets
-            combined_labels.append(zeros)
-
-        combined_data = torch.stack(combined_data)
-        combined_labels = torch.stack(combined_labels)
-
-    else:
-        assert len(dataset1) == len(dataset2)
-
-        for i in range(len(dataset1)):
-            data1, labels1 = dataset1[i]
-            data2, labels2 = dataset2[i]
-
-            combined_data.append(torch.cat((data1, data2)))
-            combined_labels.append(torch.cat((labels1, labels2)))
-
-        combined_data = torch.stack(combined_data)
-        combined_labels = torch.stack(combined_labels)
-
-    return TensorDataset(combined_data, combined_labels)
-
-
 """
 Choosing 5 random datasets from appendix A1.1 inside https://arxiv.org/abs/2201.02177.
 
@@ -637,3 +532,155 @@ class ModuloMultiplicationDoubleXTask(Dataset):
 
     def __name__(self) -> str:
         return "ModuloMultiplicationDoubleXTask"
+
+
+class NoisySineWaveTask(Dataset):
+    """
+    In this task, we have a sinusoidal wave and add noise to it.
+    """
+
+    def __init__(
+        self,
+        total_length: int,
+        x_range: tuple[float, float],
+        amplitude: float,
+        frequency: float,
+        phase: float,
+        noise: float,
+    ) -> None:
+        self.total_length = total_length
+        self.x_range = x_range
+        self.amplitude = amplitude
+        self.frequency = frequency
+        self.phase = phase
+        self.noise = noise
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates a noisy sine wave.
+        """
+
+        self.data = torch.zeros(self.total_length)
+        self.targets = torch.zeros(self.total_length)
+
+        x = np.linspace(self.x_range[0], self.x_range[1], self.total_length)
+        y = self.amplitude * np.sin(2 * np.pi * self.frequency * x + self.phase)
+
+        self.data = torch.tensor(y + self.noise * np.random.randn(self.total_length))
+        self.targets = torch.tensor(y)
+
+    def __len__(self) -> int:
+        return self.total_length
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "NoisySineWaveTask"
+
+
+class HiddenDataset(Dataset):
+    """
+    Hides a dataset by increasing the sequence length with random
+    0s and 1s at the end of the sequence. The total length of the
+    sequence is given by the hidden_length parameter.
+    """
+
+    def __init__(self, dataset: Dataset, total_length: int, random_seed: int) -> None:
+        self.dataset = dataset
+        self.total_length = total_length
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        # Esnure the total length is greater than the sequence length
+        assert self.total_length >= len(dataset[0][0])
+
+        self.generate_new_examples()
+
+    def generate_new_examples(self) -> None:
+        new_examples = []
+        new_targets = []
+
+        for data_point, target in self.dataset:
+            new_data_point = torch.zeros(self.total_length)
+            new_data_point[: len(data_point)] = data_point[: len(data_point)]
+            new_data_point[len(data_point) :] = torch.randint(
+                0, 2, (self.total_length - len(data_point), 1)
+            ).squeeze()
+            new_examples.append(new_data_point)
+            new_targets.append(target)
+
+        self.data = torch.stack(new_examples)
+        self.targets = torch.stack(new_targets)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+
+def combine_datasets(
+    dataset1: Dataset, dataset2: Dataset, individual: bool = True
+) -> Dataset:
+    """
+    Combine two pytorch datasets such that the combined dataset has an
+    input space of input(dataset1) + input(dataset2) and an output
+    space of output(dataset1) + output(dataset2)
+
+    From GPT-4...
+    """
+    combined_data = []
+    combined_labels = []
+
+    if individual:
+        # Iterate over first dataset and add examples. Just pad with zeros
+        # for the second dataset.
+
+        total_input_zeros = len(dataset2[0][0]) + len(dataset1[0][0])
+        total_label_zeros = len(dataset2[0][1]) + len(dataset1[0][1])
+
+        for input, target in dataset1:
+            zeros = torch.zeros(total_input_zeros)
+            # print(f"input.shape: {input.shape}")
+            # print(f"zeros.shape: {zeros.shape}")
+            # print(zeros[: input.shape[0]])
+            zeros[: input.shape[0]] += input
+            combined_data.append(zeros)
+
+            zeros = torch.zeros(total_label_zeros)
+            zeros[: target.shape[0]] += target
+            combined_labels.append(zeros)
+
+        for inputs, targets in dataset2:
+            zeros = torch.zeros(total_input_zeros)
+            zeros[dataset1[0][0].shape[0] :] = inputs
+            combined_data.append(zeros)
+
+            zeros = torch.zeros(total_label_zeros)
+            zeros[dataset1[0][1].shape[0] :] = targets
+            combined_labels.append(zeros)
+
+        combined_data = torch.stack(combined_data)
+        combined_labels = torch.stack(combined_labels)
+
+    else:
+        assert len(dataset1) == len(dataset2)
+
+        for i in range(len(dataset1)):
+            data1, labels1 = dataset1[i]
+            data2, labels2 = dataset2[i]
+
+            combined_data.append(torch.cat((data1, data2)))
+            combined_labels.append(torch.cat((labels1, labels2)))
+
+        combined_data = torch.stack(combined_data)
+        combined_labels = torch.stack(combined_labels)
+
+    return TensorDataset(combined_data, combined_labels)
