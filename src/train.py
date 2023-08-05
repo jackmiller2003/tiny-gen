@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gpytorch
+
 import torch
 from torch.utils.data import Dataset
 import torch.nn as nn
@@ -14,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+from typing import Any, Optional
 
 
 class Observer:
@@ -32,6 +35,8 @@ class Observer:
 
         self.training_losses = []
         self.validation_losses = []
+        self.training_log_probs = []
+        self.validation_log_probs = []
         self.training_accuracy = []
         self.validation_accuracy = []
 
@@ -57,6 +62,12 @@ class Observer:
 
     def record_validation_loss(self, loss: float) -> None:
         self.validation_losses.append(loss)
+
+    def record_training_log_prob(self, log_prob: float) -> None:
+        self.training_log_probs.append(log_prob)
+
+    def record_validation_log_prob(self, log_prob: float) -> None:
+        self.validation_log_probs.append(log_prob)
 
     def record_training_accuracy(self, accuracy: float) -> None:
         self.training_accuracy.append(accuracy)
@@ -192,24 +203,13 @@ def train_model(
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    if loss_function_label == "hinge":
-        print("Using hinge loss")
-        loss_function = MyHingeLoss()
-    elif loss_function_label == "mse":
-        print("Using mse loss")
-        loss_function = torch.nn.MSELoss()
-    elif loss_function_label == "cross-entropy":
-        print("Using cross-entropy loss")
-        loss_function = torch.nn.CrossEntropyLoss()
-    else:
-        raise ValueError("Invalid loss function.")
-
-    if optimiser_function_label == "sgd":
-        optimiser = torch.optim.SGD(
-            model.parameters(), lr=learning_rate, weight_decay=weight_decay
-        )
-    else:
-        raise ValueError("Invalid optimiser.")
+    loss_function, optimiser = setup_optimiser_and_loss(
+        loss_function_label=loss_function_label,
+        optimiser_function_label=optimiser_function_label,
+        learning_rate=learning_rate,
+        model=model,
+        weight_decay=weight_decay,
+    )
 
     for epoch in tqdm(
         range(epochs),
@@ -268,3 +268,106 @@ def train_model(
         observer.observe_weights(model)
 
     return (model, observer)
+
+
+# TODO: at some point we may want to merge this with train.
+def train_GP_model(
+    training_dataset: Dataset,
+    validation_dataset: Dataset,
+    model: Any,  # TODO: get the correct type
+    learning_rate: float,
+    epochs: int,
+    loss_function_label: str,
+    optimiser_function_label: str,
+    likelihood: Any,  # TODO: fix type
+    progress_bar: bool = True,
+    observer: Observer = None,
+) -> tuple[Any, Observer]:
+    """
+    Trains GP model. TODO: verbose docstring.
+    """
+
+    if observer is None:
+        observer = Observer()
+
+    loss_function, optimiser = setup_optimiser_and_loss(
+        loss_function_label=loss_function_label,
+        optimiser_function_label=optimiser_function_label,
+        learning_rate=learning_rate,
+        model=model,
+    )
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    x_train = torch.tensor([torch.tensor(x) for x, y in training_dataset]).to(device)
+    y_train = torch.tensor([torch.tensor(y) for x, y in training_dataset]).to(device)
+
+    x_valid = torch.tensor([torch.tensor(x) for x, y in validation_dataset]).to(device)
+    y_valid = torch.tensor([torch.tensor(y) for x, y in validation_dataset]).to(device)
+
+    marginal_log_likelihood = gpytorch.mlls.ExactMarginalLogLikelihood(
+        likelihood, model
+    )
+
+    model.train()
+
+    for i in tqdm(range(epochs), disable=not progress_bar, desc="Training GP model"):
+        optimiser.zero_grad()
+        output = model(x_train)
+        loss = -marginal_log_likelihood(output, y_train)
+        loss.backward()
+
+        model.eval()
+        train_output = model(x_train)
+        train_preds = likelihood(output)
+        valid_output = model(x_valid)
+        valid_preds = likelihood(valid_output)
+        model.train()
+
+        training_loss = loss_function(train_output.mean, y_train).detach().cpu()
+        validation_loss = loss_function(valid_output.mean, y_valid).detach().cpu()
+
+        observer.record_training_loss(training_loss)
+        observer.record_validation_loss(validation_loss)
+
+        train_log_probs = train_preds.log_prob(y_train).mean().detach().cpu()
+        valid_log_probs = valid_preds.log_prob(y_valid).mean().detach().cpu()
+
+        observer.record_training_log_prob(train_log_probs)
+        observer.record_validation_log_prob(valid_log_probs)
+
+        optimiser.step()
+
+    return (model, observer)
+
+
+def setup_optimiser_and_loss(
+    loss_function_label: str,
+    optimiser_function_label: str,
+    learning_rate: float,
+    model: Any,
+    weight_decay: Optional[float] = 0,
+) -> tuple[Any, Any]:  # TODO: fix type
+    """
+    Converts labels to objects.
+    """
+    if loss_function_label == "hinge":
+        print("Using hinge loss")
+        loss_function = MyHingeLoss()
+    elif loss_function_label == "mse":
+        print("Using mse loss")
+        loss_function = torch.nn.MSELoss()
+    elif loss_function_label == "cross-entropy":
+        print("Using cross-entropy loss")
+        loss_function = torch.nn.CrossEntropyLoss()
+    else:
+        raise ValueError("Invalid loss function.")
+
+    if optimiser_function_label == "sgd":
+        optimiser = torch.optim.SGD(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+    else:
+        raise ValueError("Invalid optimiser.")
+
+    return (loss_function, optimiser)

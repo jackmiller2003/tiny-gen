@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import gpytorch
 from gpytorch.constraints import Positive
+from torch.utils.data import Dataset
 
 import numpy.typing as npt
 import numpy as np
@@ -206,17 +207,25 @@ class MyHingeLoss(torch.nn.Module):
 
 
 class ExactGPModel(gpytorch.models.ExactGP):
-    def __init__(self, x_train, y_train, likelihood):
-        N, D = x_train.size(0), x_train.size(1)
-        super(ExactGPModel, self).__init__(x_train, y_train, likelihood)
+    def __init__(
+        self,
+        train_inputs: torch.Tensor,
+        train_targets: torch.Tensor,
+        likelihood: gpytorch.likelihoods.Likelihood,
+        num_dimensions: int,
+    ):
+        super(ExactGPModel, self).__init__(train_inputs, train_targets, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
         self.covar_module = gpytorch.kernels.ScaleKernel(
             gpytorch.kernels.RBFKernel(
-                ard_num_dims=D,
+                ard_num_dims=num_dimensions,
                 lengthscale_constraint=Positive(torch.exp, torch.log),
             ),
             outputscale_constraint=Positive(torch.exp, torch.log),
         )
+
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(self.device)
 
     def forward(self, x):
         mean_x = self.mean_module(x)

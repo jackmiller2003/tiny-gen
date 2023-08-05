@@ -547,6 +547,7 @@ class NoisySineWaveTask(Dataset):
         frequency: float,
         phase: float,
         noise: float,
+        random_seed: int,
     ) -> None:
         self.total_length = total_length
         self.x_range = x_range
@@ -554,6 +555,12 @@ class NoisySineWaveTask(Dataset):
         self.frequency = frequency
         self.phase = phase
         self.noise = noise
+        self.random_seed = random_seed
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
 
         self._generate_data()
 
@@ -562,14 +569,11 @@ class NoisySineWaveTask(Dataset):
         Generates a noisy sine wave.
         """
 
-        self.data = torch.zeros(self.total_length)
-        self.targets = torch.zeros(self.total_length)
-
         x = np.linspace(self.x_range[0], self.x_range[1], self.total_length)
         y = self.amplitude * np.sin(2 * np.pi * self.frequency * x + self.phase)
 
-        self.data = torch.tensor(y + self.noise * np.random.randn(self.total_length))
-        self.targets = torch.tensor(y)
+        self.data = torch.tensor(x)
+        self.targets = torch.tensor(y + self.noise * np.random.randn(self.total_length))
 
     def __len__(self) -> int:
         return self.total_length

@@ -5,50 +5,50 @@ an experiment is to:
     2. Write the code to run the experiment
     3. Write the code to plot the results of the experiment
 
-Somebody else using the code should be able to run the experiment by running the
+Somebody else using the code should be able to run the experiment by using the
 relevant function in this file via the flag --experiment.
 
 For reproducibility define a random seed or set of random seeds, passing them into:
     1. The dataset
     2. The model
-Theoretically, one should be able to get exactly the same results as the author
-by running the experiment with the same random seeds.
+
+You should be able to get exactly the same results as the author
+by running the experiment.
 """
 
-import torch
-from torch.utils.data import TensorDataset
-import gpytorch
 import argparse
-import numpy as np
-from pathlib import Path
 import os
+from pathlib import Path
+
+import gpytorch
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+from gpytorch.constraints import Positive
+from tqdm import tqdm
 
 from src.dataset import (
-    ParityTask,
     HiddenDataset,
-    PeekParityTask,
     ModuloAdditionTask,
-    ModuloSubtractionTask,
     ModuloDivisionTask,
+    ModuloMultiplicationDoubleXTask,
+    ModuloSubtractionTask,
+    ParityTask,
+    PeekParityTask,
     PolynomialTask,
     PolynomialTaskTwo,
-    ModuloMultiplicationDoubleXTask,
+    NoisySineWaveTask,
     combine_datasets,
 )
-from src.model import TinyModel, ExpandableModel, ExactGPModel, ExactMarginalLikelihood
-from src.train import train_model, Observer
-from src.plot import (
-    plot_validation_and_accuracy_from_observers,
-)
-from src.common import get_accuracy_on_dataset
+from src.model import ExactGPModel, ExactMarginalLikelihood, ExpandableModel, TinyModel
+from src.plot import plot_validation_and_accuracy_from_observers
+from src.train import Observer, train_model, train_GP_model
 
 
-def experiment_grokking_plain(args):
+def experiment_grokking_plain():
     """
     Can we recover grokking behaviour using cross-entropy loss
-    from the hidden parity prediction paper:
-
-    https://arxiv.org/abs/2303.11873.
+    from the hidden parity prediction paper: https://arxiv.org/abs/2303.11873.
     """
 
     weight_decay = 1e-2
@@ -104,7 +104,7 @@ def experiment_grokking_plain(args):
     observer.plot_me(path=Path("experiments/grokking_plain/"))
 
 
-def experiment_data_sensitivity(args):
+def experiment_data_sensitivity():
     """
     Here we are going to look at the sensitivity of grokking to the size of the underlying dataset
     for the parity prediction task. We will use the same model as in experiment grokking_plain.
@@ -172,7 +172,7 @@ def experiment_data_sensitivity(args):
     )
 
 
-def experiment_random_features(args):
+def experiment_random_features():
     """
     Does grokking occur under random feature regression? We freeze the first layer
     weights under several random seeds to find out.
@@ -242,7 +242,7 @@ def experiment_random_features(args):
     )
 
 
-def experiment_two_layer(args):
+def experiment_two_layer():
     """
     Does Grokking occur for a two layer network?
     """
@@ -305,7 +305,7 @@ def experiment_two_layer(args):
     observer.plot_me(path=Path("experiments/two_layer/"))
 
 
-def experiment_random_feature_3_layer(args):
+def experiment_random_feature_3_layer():
     """
     In this experiment, I wonder if something like this will emerge:
 
@@ -375,7 +375,7 @@ def experiment_random_feature_3_layer(args):
     observer.plot_me(path=Path("experiments/random_feature_3_layer/"))
 
 
-def experiment_double_grokking(args):
+def experiment_double_grokking():
     """
     This experiment is designed to see if we can uncover a double grokking scenario. That is, the network shifts from:
     confusion -> generalisation to some of the pattern -> full pattern
@@ -452,7 +452,7 @@ def experiment_double_grokking(args):
     observer.plot_me(path=Path("experiments/double_grokking/"), log=False)
 
 
-def experiment_rate_limiting(args):
+def experiment_rate_limiting():
     """
     There exists a hypothesis that grokking is a competition between different
     parts of the network. To test this we will rate limit different components
@@ -539,7 +539,7 @@ def experiment_rate_limiting(args):
         )
 
 
-def experiment_grokking_on_modulo_arithmetic(args):
+def experiment_grokking_on_modulo_arithmetic():
     """
     Can we reproduce grokking within modulo arithmetic?
     """
@@ -595,7 +595,7 @@ def experiment_grokking_on_modulo_arithmetic(args):
     observer.plot_me(path=Path("experiments/grokking_on_modulo_arithmetic/"), log=False)
 
 
-def experiment_combined_prediction(args):
+def experiment_combined_prediction():
     """
     Combined prediction task of both parity and modulo addition.
     """
@@ -703,7 +703,7 @@ def experiment_combined_prediction(args):
     observer.plot_me(path=Path("experiments/combined_prediction/"), log=False)
 
 
-def experiment_combined_prediction_constrained(args):
+def experiment_combined_prediction_constrained():
     """
     Same experiment as the combined prediction task but a continual reduction
     in the hidden layer size.
@@ -823,7 +823,7 @@ def experiment_combined_prediction_constrained(args):
         )
 
 
-def experiment_combined_hidden_and_data_constrained(args):
+def experiment_combined_hidden_and_data_constrained():
     """
     Same experiment as the combined prediction task but a continual reduction
     in the hidden layer size and a smaller number of training points.
@@ -942,7 +942,7 @@ def experiment_combined_hidden_and_data_constrained(args):
         )
 
 
-def experiment_dependence_on_random_length(args):
+def experiment_dependence_on_random_length():
     """
     Looking at dependence of grokking on the random feature length, presumably
     the longer the random features the more grokking.
@@ -1065,7 +1065,7 @@ def experiment_dependence_on_random_length(args):
     )
 
 
-def experiment_dependence_on_weight_init(args):
+def experiment_dependence_on_weight_init():
     """
     We decrease the magntiude of initiasl weights to try and modify grokking.
 
@@ -1201,7 +1201,7 @@ def experiment_dependence_on_weight_init(args):
     )
 
 
-def experiment_weight_magnitude_plot(args):
+def experiment_weight_magnitude_plot():
     """
     Here we want to plot the magntiude of weights inside of both the first
     and second weight matrix. Basically, does Grokking correspond to a
@@ -1266,7 +1266,7 @@ def experiment_weight_magnitude_plot(args):
     observer.plot_me(path=Path("experiments/weight_magnitude_plot/"), log=False)
 
 
-def experiment_training_on_openai_datasets(args):
+def experiment_training_on_openai_datasets():
     """
     This experiment is to see if we can reproduce grokking or even get things
     to train on the openai datasets randomly choosen.
@@ -1404,165 +1404,109 @@ def experiment_training_on_openai_datasets(args):
         )
 
 
-def experiment_grokking_plain_gp_regression(args):
+def experiment_grokking_plain_gp_regression():
     """
     Does grokking behaviour happens when using a diffirent model,
     GP regression?
     """
 
-    import gpytorch
-    from tqdm import tqdm
-    import pdb
-    from gpytorch.models import ApproximateGP
-    from gpytorch.variational import CholeskyVariationalDistribution
-    from gpytorch.variational import UnwhitenedVariationalStrategy
-    from gpytorch.constraints import Positive
-    import matplotlib.pyplot as plt
+    os.makedirs("experiments/grokking_plain_gp_regression", exist_ok=True)
 
-    torch.manual_seed(42)
-    np.random.seed(42)
-
-    class ExactGPModel(gpytorch.models.ExactGP):
-        def __init__(self, x_train, y_train, likelihood):
-            N, D = x_train.size(0), x_train.size(1)
-            super(ExactGPModel, self).__init__(x_train, y_train, likelihood)
-            self.mean_module = gpytorch.means.ConstantMean()
-            self.covar_module = gpytorch.kernels.ScaleKernel(
-                gpytorch.kernels.RBFKernel(
-                    ard_num_dims=D,
-                    lengthscale_constraint=Positive(torch.exp, torch.log),
-                ),
-                outputscale_constraint=Positive(torch.exp, torch.log),
-            )
-
-        def forward(self, x):
-            mean_x = self.mean_module(x)
-            covar_x = self.covar_module(x)
-            return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-
-    x = torch.from_numpy(np.random.rand(100, 1) * 3 - 1.5)
-    y = torch.sin(2 * x) + torch.randn([100, 1]) * 0.1
-    y = y.squeeze()
-
+    random_seed = 42
     learning_rate = 1e-1
     epochs = 500
+    length_scale = 1e-3
 
-    x_train, y_train = x[:50, :], y[:50]
-    x_valid, y_valid = x[50:, :], y[50:]
+    # Setting seeds
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+
+    dataset = NoisySineWaveTask(
+        total_length=100,
+        x_range=(-1.5, 1.5),
+        amplitude=1,
+        frequency=1 / 3,
+        phase=0,
+        noise=0.1,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        dataset,
+        [50, 50],
+    )
+
+    train_inputs = torch.tensor([torch.tensor(x) for x, y in training_dataset])
+    train_targets = torch.tensor([torch.tensor(y) for x, y in training_dataset])
+
+    num_dimensions = 1
 
     plt.figure()
-    plt.plot(x_train, y_train, "+k")
+    plt.plot([x for x, y in training_dataset], [y for x, y in training_dataset], "+k")
     plt.savefig("tmp/gpr_data.png")
 
     # initialize likelihood and model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = ExactGPModel(x_train, y_train, likelihood)
-    model.to(device)
-    likelihood.to(device)
-    x_train = x_train.to(device)
-    y_train = y_train.to(device)
-    x_valid = x_valid.to(device)
-    y_valid = y_valid.to(device)
-
-    model.covar_module.base_kernel.lengthscale = 0.001
+    likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device)
+    model = ExactGPModel(
+        train_inputs=train_inputs,
+        train_targets=train_targets,
+        likelihood=likelihood,
+        num_dimensions=num_dimensions,
+    )
+    model.covar_module.base_kernel.lengthscale = length_scale
 
     model.train()
     likelihood.train()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+    model, observer = train_GP_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        epochs=epochs,
+        loss_function_label="mse",
+        optimiser_function_label="sgd",
+        likelihood=likelihood,
+    )
 
-    train_mses, valid_mses = [], []
-    train_lps, valid_lps = [], []
-    lengthscales = []
-    vfes = []
-    epochs_ls = [0, 10, 50, 150]
-    for i in tqdm(range(epochs)):
-        optimizer.zero_grad()
-        output = model(x_train)
-        loss = -mll(output, y_train)
-        loss.backward()
+    observer.plot_me(path=Path("experiments/grokking_plain_gp_regression/"), log=False)
 
-        model.eval()
-        output = model(x_train)
-        train_preds = likelihood(output)
-        valid_output = model(x_valid)
-        valid_preds = likelihood(valid_output)
-        model.train()
+    # plt.figure()
+    # plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="train")
+    # plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="validation")
+    # plt.xscale("log")
+    # plt.xlabel("epoch")
+    # plt.ylabel("mse")
+    # plt.legend()
+    # plt.savefig("tmp/gpr_mse.png")
 
-        train_mse = ((output.mean - y_train) ** 2).mean().detach().cpu()
-        valid_mse = ((valid_output.mean - y_valid) ** 2).mean().detach().cpu()
-        train_lp = train_preds.log_prob(y_train).mean().detach().cpu()
-        valid_lp = valid_preds.log_prob(y_valid).mean().detach().cpu()
-        train_mses.append(train_mse)
-        train_lps.append(train_lp)
-        valid_mses.append(valid_mse)
-        valid_lps.append(valid_lp)
-        vfes.append(loss.detach().cpu())
+    # plt.figure()
+    # plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
+    # plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
+    # plt.xscale("log")
+    # plt.xlabel("epoch")
+    # plt.ylabel("log prob")
+    # plt.legend()
+    # plt.savefig("tmp/gpr_lp.png")
 
-        print(
-            "Iter %d/%d - Loss: %.3f, train mse: %.3f, valid mse: %.3f, train lp: %.3f, valid lp %.3f"
-            % (i + 1, epochs, loss.item(), train_mse, valid_mse, train_lp, valid_lp)
-        )
-
-        if i in epochs_ls:
-            lengthscales.append(
-                model.covar_module.base_kernel.lengthscale.detach().cpu().numpy()
-            )
-            model.eval()
-            x = torch.from_numpy(np.linspace(-2, 2, 100)).to(device)
-            plt.figure()
-            plt.plot(x_train.cpu(), y_train.cpu(), "+k")
-            pred = model(x)
-            m, v = pred.mean.detach(), pred.variance.detach()
-            plt.plot(x.cpu(), m.cpu(), "-b")
-            plt.fill_between(
-                x.cpu(),
-                m.cpu() + 2 * torch.sqrt(v.cpu()),
-                m.cpu() - 2 * torch.sqrt(v.cpu()),
-                color="b",
-                alpha=0.3,
-            )
-
-            plt.savefig("tmp/gpr_pred_%d.png" % i)
-
-        optimizer.step()
-
-    plt.figure()
-    plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="train")
-    plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="validation")
-    plt.xscale("log")
-    plt.xlabel("epoch")
-    plt.ylabel("mse")
-    plt.legend()
-    plt.savefig("tmp/gpr_mse.png")
-
-    plt.figure()
-    plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
-    plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
-    plt.xscale("log")
-    plt.xlabel("epoch")
-    plt.ylabel("log prob")
-    plt.legend()
-    plt.savefig("tmp/gpr_lp.png")
-
-    plt.figure()
-    plt.plot(np.arange(epochs) + 1, vfes, "-k")
-    plt.xscale("log")
-    plt.xlabel("epoch")
-    plt.ylabel("NLML")
-    plt.savefig("tmp/gpr_lml.png")
+    # plt.figure()
+    # plt.plot(np.arange(epochs) + 1, vfes, "-k")
+    # plt.xscale("log")
+    # plt.xlabel("epoch")
+    # plt.ylabel("NLML")
+    # plt.savefig("tmp/gpr_lml.png")
 
 
-def experiment_grokking_gp_regression(args):
+def experiment_grokking_gp_regression():
     """
     Does grokking behaviour happens when using a diffirent model, GP regression?
     """
 
-    from tqdm import tqdm
     import pdb
+
     import matplotlib.pyplot as plt
+    from tqdm import tqdm
 
     # TODO: deal with random seed
     torch.manual_seed(42)
@@ -1770,7 +1714,7 @@ def experiment_grokking_gp_regression(args):
     plt.savefig("tmp/gpr_complexity_landscape.png")
 
 
-def experiment_grokking_plain_gp_classification_toy(args):
+def experiment_grokking_plain_gp_classification_toy():
     """
     Does grokking behaviour happens when using a diffirent model,
     GP classification?
@@ -1778,13 +1722,16 @@ def experiment_grokking_plain_gp_classification_toy(args):
 
     torch.manual_seed(42)
     np.random.seed(42)
-    import gpytorch
-    from tqdm import tqdm
     import pdb
-    from gpytorch.models import ApproximateGP
-    from gpytorch.variational import CholeskyVariationalDistribution
-    from gpytorch.variational import UnwhitenedVariationalStrategy
+
+    import gpytorch
     import matplotlib.pyplot as plt
+    from gpytorch.models import ApproximateGP
+    from gpytorch.variational import (
+        CholeskyVariationalDistribution,
+        UnwhitenedVariationalStrategy,
+    )
+    from tqdm import tqdm
 
     class GPModel(ApproximateGP):
         def __init__(self, x_train):
@@ -1929,7 +1876,7 @@ def experiment_grokking_plain_gp_classification_toy(args):
     plt.savefig("tmp/gpc_toy_vfe.png")
 
 
-def experiment_grokking_plain_gp_classification(args):
+def experiment_grokking_plain_gp_classification():
     """
     Does grokking behaviour happens when using a diffirent model,
     GP classification?
@@ -1937,13 +1884,16 @@ def experiment_grokking_plain_gp_classification(args):
 
     torch.manual_seed(42)
     np.random.seed(42)
-    import gpytorch
-    from tqdm import tqdm
     import pdb
-    from gpytorch.models import ApproximateGP
-    from gpytorch.variational import CholeskyVariationalDistribution
-    from gpytorch.variational import UnwhitenedVariationalStrategy
+
+    import gpytorch
     import matplotlib.pyplot as plt
+    from gpytorch.models import ApproximateGP
+    from gpytorch.variational import (
+        CholeskyVariationalDistribution,
+        UnwhitenedVariationalStrategy,
+    )
+    from tqdm import tqdm
 
     class GPModel(ApproximateGP):
         def __init__(self, x_train):
@@ -2190,4 +2140,4 @@ if __name__ == "__main__":
 
     for experiment_name in args.experiments:
         os.makedirs("experiments/experiment_name/", exist_ok=True)
-        eval("experiment_{}(args)".format(experiment_name))
+        eval("experiment_{}()".format(experiment_name))
