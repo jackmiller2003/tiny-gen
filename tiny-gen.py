@@ -43,6 +43,7 @@ from src.dataset import (
 from src.model import ExactGPModel, ExactMarginalLikelihood, ExpandableModel, TinyModel
 from src.plot import plot_validation_and_accuracy_from_observers
 from src.train import Observer, train_model, train_GP_model
+from tools import plot_landsacpes_of_GP_model
 
 
 def experiment_grokking_plain():
@@ -1481,220 +1482,66 @@ def experiment_grokking_plain_gp_regression():
     observer.plot_me(path=Path("experiments/grokking_plain_gp_regression/"), log=False)
 
 
-def experiment_grokking_gp_regression():
+def experiment_grokking_gp_regression_landscapes():
     """
-    Does grokking behaviour happens when using a diffirent model, GP regression?
+    Can we examine the complexity and loss lanscape associated with grokking in the GP case?
     """
 
-    import pdb
-
-    import matplotlib.pyplot as plt
-    from tqdm import tqdm
-
-    # TODO: deal with random seed
+    # --- Setup ---#
     torch.manual_seed(42)
     np.random.seed(42)
 
-    # generate synthetic data
-    true_noise_std = 0.1
-    x = torch.from_numpy(np.random.rand(100, 1) * 3 - 1.5)
-    y = torch.sin(2 * x) + torch.randn([100, 1]) * true_noise_std
-    y = y.squeeze()
-    x_train, y_train = x[:50, :], y[:50]
-    x_valid, y_valid = x[50:, :], y[50:]
+    os.makedirs("experiments/grokking_gp_regression_landscapes", exist_ok=True)
+
+    x_noise = 0.1
+    random_seed = 42
+
+    dataset = NoisySineWaveTask(
+        total_length=100,
+        x_range=(-1.5, 1.5),
+        amplitude=1,
+        frequency=1 / (np.pi),
+        phase=0,
+        x_noise=x_noise,
+        y_noise=0.1,
+        random_seed=random_seed,
+        random_x=True,
+    )
 
     # initialize likelihood and model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    x_train = x_train.to(device)
-    y_train = y_train.to(device)
-    x_valid = x_valid.to(device)
-    y_valid = y_valid.to(device)
 
-    no_steps = 200
-    log_scale = torch.linspace(-5, 5, no_steps)
-    log_lengthscale = torch.linspace(-7, 4, no_steps)
-    ln, ll = torch.meshgrid(log_scale, log_lengthscale, indexing="xy")
-    ml = torch.zeros_like(ln)
-    fit_terms = torch.zeros_like(ln)
-    complexity_terms = torch.zeros_like(ln)
-    for i in tqdm(range(ln.shape[0])):
-        for j in range(ln.shape[1]):
-            likelihood = gpytorch.likelihoods.GaussianLikelihood(
-                noise=true_noise_std**2
-            )
-            model = ExactGPModel(x_train, y_train, likelihood)
-            mll = ExactMarginalLikelihood(likelihood, model)
-            model.to(device)
-            likelihood.to(device)
-            model.covar_module.base_kernel.lengthscale = torch.exp(ll[i, j])
-            model.covar_module.outputscale = torch.exp(ln[i, j])
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        dataset,
+        [50, 50],
+    )
 
-            output = model(x_train)
-            loss, fit, comp = mll(output, y_train)
-            loss, fit, comp = -loss, -fit, -comp
-            ml[i, j] = loss.detach().cpu()
-            fit_terms[i, j] = fit.detach().cpu()
-            complexity_terms[i, j] = comp.detach().cpu()
+    train_inputs = torch.tensor(
+        [x.clone().detach().unsqueeze(0) for x, y in training_dataset]
+    ).to(device)
 
-    plt.figure()
-    plt.plot(x_train.cpu(), y_train.cpu(), "+k")
-    plt.savefig("tmp/gpr_data.png")
+    train_targets = torch.tensor(
+        [y.clone().detach().unsqueeze(0) for x, y in training_dataset]
+    ).to(device)
 
-    plt.figure(100)
-    c = plt.pcolor(ln, ll, ml, cmap="RdBu")
-    plt.colorbar(c)
-    plt.xlabel("log outputscale")
-    plt.ylabel("log lengthscale")
-    plt.savefig("tmp/gpr_marginal_likelihood_landscape.png")
+    num_dimensions = 1
 
-    plt.figure(101)
-    c = plt.pcolor(ln, ll, fit_terms, cmap="RdBu")
-    plt.colorbar(c)
-    plt.xlabel("log outputscale")
-    plt.ylabel("log lengthscale")
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(noise=x_noise**2)
+    model = ExactGPModel(
+        train_inputs, train_targets, likelihood, num_dimensions=num_dimensions
+    )
 
-    plt.figure(102)
-    c = plt.pcolor(ln, ll, complexity_terms, cmap="RdBu")
-    plt.colorbar(c)
-    plt.xlabel("log outputscale")
-    plt.ylabel("log lengthscale")
-
-    learning_rate = 1e-2
-    epochs = 1000
-    init_ll = [-6, -6, 3]
-    init_ls = [-4, 4, 0]
-    colors = ["g", "y", "b"]
-    for init_idx, (ll_i, ls_i) in tqdm(enumerate(zip(init_ll, init_ls))):
-        likelihood = gpytorch.likelihoods.GaussianLikelihood(noise=true_noise_std**2)
-        model = ExactGPModel(x_train, y_train, likelihood)
-        mll = ExactMarginalLikelihood(likelihood, model)
-        model.to(device)
-        likelihood.to(device)
-        optimizer = torch.optim.Adam(
-            model.covar_module.parameters(),
-            lr=learning_rate,
-        )
-        model.covar_module.base_kernel.lengthscale = np.exp(ll_i)
-        model.covar_module.outputscale = np.exp(ls_i)
-
-        model.train()
-        likelihood.train()
-
-        train_mses, valid_mses = [], []
-        train_lps, valid_lps = [], []
-        lengthscales = []
-        lmls, fits, comps = [], [], []
-        epochs_ls = [0, 10, 50, 150, 250]
-        ls_path = []
-        ll_path = []
-
-        for i in tqdm(range(epochs)):
-            ls_path.append(torch.log(model.covar_module.outputscale).detach().cpu())
-            ll_path.append(
-                torch.log(model.covar_module.base_kernel.lengthscale[0, 0])
-                .detach()
-                .cpu()
-            )
-            optimizer.zero_grad()
-            output = model(x_train)
-            loss, fit, comp = mll(output, y_train)
-            loss, fit, comp = -loss, -fit, -comp
-            loss.backward()
-
-            model.eval()
-            output = model(x_train)
-            train_preds = likelihood(output)
-            valid_output = model(x_valid)
-            valid_preds = likelihood(valid_output)
-            model.train()
-
-            train_mse = ((output.mean - y_train) ** 2).mean().detach().cpu()
-            valid_mse = ((valid_output.mean - y_valid) ** 2).mean().detach().cpu()
-            train_lp = train_preds.log_prob(y_train).mean().detach().cpu()
-            valid_lp = valid_preds.log_prob(y_valid).mean().detach().cpu()
-            train_mses.append(train_mse)
-            train_lps.append(train_lp)
-            valid_mses.append(valid_mse)
-            valid_lps.append(valid_lp)
-            lmls.append(loss.detach().cpu())
-            fits.append(fit.detach().cpu())
-            comps.append(comp.detach().cpu())
-
-            print(
-                "Iter %d/%d - Loss: %.3f, train mse: %.3f, valid mse: %.3f, train lp: %.3f, valid lp %.3f"
-                % (i + 1, epochs, loss.item(), train_mse, valid_mse, train_lp, valid_lp)
-            )
-
-            if i in epochs_ls:
-                lengthscales.append(
-                    model.covar_module.base_kernel.lengthscale.detach().cpu().numpy()
-                )
-                model.eval()
-                x = torch.from_numpy(np.linspace(-2, 2, 100)).to(device)
-                plt.figure()
-                plt.plot(x_train.cpu(), y_train.cpu(), "+k")
-                pred = model(x)
-                m, v = pred.mean.detach(), pred.variance.detach()
-                plt.plot(x.cpu(), m.cpu(), "-b")
-                plt.fill_between(
-                    x.cpu(),
-                    m.cpu() + 2 * torch.sqrt(v.cpu()),
-                    m.cpu() - 2 * torch.sqrt(v.cpu()),
-                    color="b",
-                    alpha=0.3,
-                )
-                plt.ylim(-3, 3)
-
-                plt.savefig("tmp/gpr_%d_pred_%d.png" % (init_idx, i))
-
-            optimizer.step()
-
-        plt.figure(100)
-        plt.plot(ls_path, ll_path, color="k")
-        plt.plot(ls_path[0], ll_path[0], "s", markersize=10, color=colors[init_idx])
-        plt.plot(ls_path[-1], ll_path[-1], "*", markersize=10, color=colors[init_idx])
-        plt.figure(101)
-        plt.plot(ls_path, ll_path, color="k")
-        plt.plot(ls_path[0], ll_path[0], "s", markersize=10, color=colors[init_idx])
-        plt.plot(ls_path[-1], ll_path[-1], "*", markersize=10, color=colors[init_idx])
-        plt.figure(102)
-        plt.plot(ls_path, ll_path, color="k")
-        plt.plot(ls_path[0], ll_path[0], "s", markersize=10, color=colors[init_idx])
-        plt.plot(ls_path[-1], ll_path[-1], "*", markersize=10, color=colors[init_idx])
-
-        plt.figure()
-        plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="train")
-        plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="validation")
-        plt.xscale("log")
-        plt.xlabel("epoch")
-        plt.ylabel("mse")
-        plt.legend()
-        plt.savefig("tmp/gpr_%d_mse.png" % init_idx)
-
-        plt.figure()
-        plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
-        plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
-        plt.xscale("log")
-        plt.xlabel("epoch")
-        plt.ylabel("log prob")
-        plt.legend()
-        plt.savefig("tmp/gpr_%d_lp.png" % init_idx)
-
-        plt.figure()
-        plt.plot(np.arange(epochs) + 1, lmls, "-k")
-        plt.plot(np.arange(epochs) + 1, fits, "-b")
-        plt.plot(np.arange(epochs) + 1, comps, "-r")
-        plt.xscale("log")
-        plt.xlabel("epoch")
-        plt.ylabel("objective, data fit and complexity")
-        plt.savefig("tmp/gpr_%d_lml.png" % init_idx)
-
-    plt.figure(100)
-    plt.savefig("tmp/gpr_marginal_likelihood_landscape.png")
-    plt.figure(101)
-    plt.savefig("tmp/gpr_datafit_landscape.png")
-    plt.figure(102)
-    plt.savefig("tmp/gpr_complexity_landscape.png")
+    plot_landsacpes_of_GP_model(
+        training_dataset=training_dataset,
+        model=model,
+        likelihood=likelihood,
+        path_to_plot=Path("experiments/grokking_gp_regression_landscapes/"),
+        num_plotting_steps=100,
+        epochs=3000,
+        optimiser_function_label="adam",
+        validation_dataset=validation_dataset,
+        trajectories_through_landscape=True,
+    )
 
 
 def experiment_grokking_plain_gp_classification_toy():
