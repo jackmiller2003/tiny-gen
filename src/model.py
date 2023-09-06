@@ -189,6 +189,42 @@ class ExpandableModel(nn.Module):
         return x
 
 
+import torch
+
+
+class RBFLinearModel(torch.nn.Module):
+    def __init__(self, rbf_means: list, rbf_variance=0.2):
+        """
+        Initialises a linear model with radial basis functions (with help from Chat-GPT)
+        """
+        super(RBFLinearModel, self).__init__()
+
+        self.rbf_means = torch.tensor(rbf_means).float()
+        self.rbf_variance = rbf_variance
+
+        self.weights = torch.nn.Parameter(torch.randn(len(rbf_means), 1))
+        self.bias = torch.nn.Parameter(torch.randn(1))
+
+    def forward(self, x):
+        """
+        Completes a forward pass of the network
+        """
+        # Create radial basis functions
+        rbf_functions = []
+        for mean in self.rbf_means:
+            rbf_functions.append(
+                torch.exp(-torch.pow(x - mean, 2) / (2 * self.rbf_variance))
+            )
+
+        # Concatenate radial basis functions
+        x_rbf = torch.concat(rbf_functions, dim=1)
+
+        # Linear combination of the RBFs
+        out = self.weights.T @ x_rbf.T
+
+        return out
+
+
 # Taken from https://arxiv.org/pdf/2303.11873.pdf
 class MyHingeLoss(torch.nn.Module):
     def __init__(self):

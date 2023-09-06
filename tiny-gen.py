@@ -40,7 +40,13 @@ from src.dataset import (
     NoisySineWaveTask,
     combine_datasets,
 )
-from src.model import ExactGPModel, ExactMarginalLikelihood, ExpandableModel, TinyModel
+from src.model import (
+    ExactGPModel,
+    ExactMarginalLikelihood,
+    ExpandableModel,
+    TinyModel,
+    RBFLinearModel,
+)
 from src.plot import plot_validation_and_accuracy_from_observers
 from src.train import Observer, train_model, train_GP_model
 from tools import plot_landsacpes_of_GP_model
@@ -1879,6 +1885,92 @@ def experiment_grokking_plain_gp_classification():
 
     axes[-1].set_xlabel("input dim")
     plt.savefig("tmp/gpc_ls.png")
+
+
+def experiment_grokking_with_rbf_lr():
+    """
+    In this experiment, we hope to demonstrate grokking with the use of RBF kernels
+    and bayesian linear regression.
+
+    Some help was provided by: https://nbviewer.org/github/krasserm/bayesian-machine-learning/blob/dev/bayesian-linear-regression/bayesian_linear_regression.ipynb
+    """
+
+    # Dataset is same as toy GP case
+
+    x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+    y = ((x > 0) * 1).to(torch.float)
+    y = y.squeeze()
+
+    x_train = torch.from_numpy(
+        np.array([-0.5, -0.4, -0.05, 0.05, 0.3, 0.5], dtype=np.float32)
+    )
+    x_train = x_train.unsqueeze(1)
+    y_train = torch.from_numpy(np.array([-1, -1, -1, 1.0, 1.0, 1.0], dtype=np.float32))
+
+    x_train, y_train = x[:30, :], y[:30]
+
+    x_valid, y_valid = x[70:, :], y[70:]
+
+    model = RBFLinearModel(rbf_means=torch.linspace(-1, 1, 50), rbf_variance=4e-2)
+
+    optimiser = torch.optim.SGD(model.parameters(), lr=1e-1, weight_decay=1e-2)
+
+    train_loss = []
+    val_loss = []
+
+    for epoch in range(1000):
+        optimiser.zero_grad()
+
+        outputs = model(x_train)
+
+        loss = torch.nn.functional.mse_loss(outputs, y_train)
+
+        train_loss.append(loss.detach().numpy())
+
+        loss.backward()
+        optimiser.step()
+
+        model.eval()
+
+        val_outputs = model(x_valid)
+        v_loss = torch.nn.functional.mse_loss(val_outputs, y_valid)
+
+        val_loss.append(v_loss.detach().numpy())
+
+    plt.figure()
+
+    plt.plot(train_loss, label="train")
+    plt.plot(val_loss, label="validation")
+
+    plt.yscale("log")
+
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_rbf_lr_loss.png")
+
+    # Plotting the inference
+    model.eval()  # Make sure the model is in evaluation mode
+
+    # Generate predictions over a range
+    x_range = torch.linspace(-0.6, 0.6, 200).view(
+        -1, 1
+    )  # Extend a bit for visualization purposes
+    y_pred = model(x_range).detach().numpy()
+
+    plt.figure()
+    plt.scatter(
+        x_train.numpy(), y_train.numpy(), color="blue", s=50, label="Train Data"
+    )
+    plt.scatter(
+        x_valid.numpy(), y_valid.numpy(), color="red", s=50, label="Validation Data"
+    )
+    plt.plot(x_range.numpy(), y_pred.T, color="green", label="Model Inference")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title("Inference of the RBF Linear Model")
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_rbf_lr_inference.png")
 
 
 if __name__ == "__main__":
