@@ -703,3 +703,15 @@ def combine_datasets(
         combined_labels = torch.stack(combined_labels)
 
     return TensorDataset(combined_data, combined_labels)
+
+
+class ZeroOneClassificationDataset(Dataset):
+    def __init__(self, length=100):
+        self.data = torch.from_numpy(np.random.rand(length, 1) - 0.5).to(torch.float32)
+        self.labels = ((self.data > 0) * 1).squeeze().to(torch.float32)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]

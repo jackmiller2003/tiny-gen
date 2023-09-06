@@ -1479,7 +1479,7 @@ def experiment_grokking_plain_gp_regression():
         likelihood=likelihood,
     )
 
-    observer.plot_me(path=Path("experiments/grokking_plain_gp_regression/"), log=False)
+    observer.plot_me(path=Path("experiments/grokking_plain_gp_regression/"), log=True)
 
 
 def experiment_grokking_gp_regression_landscapes():
