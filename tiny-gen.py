@@ -50,6 +50,7 @@ from src.model import (
 from src.plot import plot_validation_and_accuracy_from_observers
 from src.train import Observer, train_model, train_GP_model
 from tools import plot_landsacpes_of_GP_model
+from sklearn.model_selection import train_test_split
 
 
 def experiment_grokking_plain():
@@ -1887,7 +1888,7 @@ def experiment_grokking_plain_gp_classification():
     plt.savefig("tmp/gpc_ls.png")
 
 
-def experiment_grokking_with_rbf_lr():
+def experiment_grokking_with_rbf_01_lr():
     """
     In this experiment, we hope to demonstrate grokking with the use of RBF kernels
     and bayesian linear regression.
@@ -1911,14 +1912,14 @@ def experiment_grokking_with_rbf_lr():
 
     x_valid, y_valid = x[70:, :], y[70:]
 
-    model = RBFLinearModel(rbf_means=torch.linspace(-1, 1, 50), rbf_variance=4e-2)
+    model = RBFLinearModel(rbf_means=torch.linspace(-1, 1, 5000), rbf_variance=4e-4)
 
-    optimiser = torch.optim.SGD(model.parameters(), lr=1e-1, weight_decay=1e-2)
+    optimiser = torch.optim.SGD(model.parameters(), lr=1e-2, weight_decay=1)
 
     train_loss = []
     val_loss = []
 
-    for epoch in range(1000):
+    for epoch in tqdm(range(400)):
         optimiser.zero_grad()
 
         outputs = model(x_train)
@@ -1971,6 +1972,91 @@ def experiment_grokking_with_rbf_lr():
     plt.legend()
 
     plt.savefig("tmp/grokking_with_rbf_lr_inference.png")
+
+
+def experiment_grokking_with_rbf_sin_lr():
+    """
+    In this experiment, we hope to demonstrate grokking with the use of RBF kernels on a sin
+    curve (with noise).
+
+    Some help was provided by: https://nbviewer.org/github/krasserm/bayesian-machine-learning/blob/dev/bayesian-linear-regression/bayesian_linear_regression.ipynb
+    """
+
+    # Dataset is same as toy GP case
+
+    x = torch.from_numpy(np.sort(5 * np.random.rand(400, 1), axis=0))
+
+    x = x.to(dtype=torch.float32)
+
+    y = torch.sin(x).ravel()
+    # y[::4] += 2 * (0.5 - np.random.rand(100))  # add noise
+
+    x_train, x_valid, y_train, y_valid = train_test_split(
+        x, y, test_size=0.4, random_state=42
+    )
+
+    y_train[::4] += 2 * (0.5 - np.random.rand(60))  # add noise
+
+    model = RBFLinearModel(rbf_means=torch.linspace(0, 5, 1000), rbf_variance=4e-3)
+
+    optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=1e-3)
+
+    train_loss = []
+    val_loss = []
+
+    for epoch in tqdm(range(2000)):
+        optimiser.zero_grad()
+
+        outputs = model(x_train)
+
+        loss = torch.nn.functional.mse_loss(outputs, y_train)
+
+        train_loss.append(loss.detach().numpy())
+
+        loss.backward()
+        optimiser.step()
+
+        model.eval()
+
+        val_outputs = model(x_valid)
+        v_loss = torch.nn.functional.mse_loss(val_outputs, y_valid)
+
+        val_loss.append(v_loss.detach().numpy())
+
+    plt.figure()
+
+    plt.plot(train_loss, label="train")
+    plt.plot(val_loss, label="validation")
+
+    plt.yscale("log")
+
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_sin_rbf_lr_loss.png")
+
+    # Plotting the inference
+    model.eval()  # Make sure the model is in evaluation mode
+
+    # Generate predictions over a range
+    x_range = torch.linspace(0, 5, 500).view(
+        -1, 1
+    )  # Extend a bit for visualization purposes
+    y_pred = model(x_range).detach().numpy()
+
+    plt.figure()
+    plt.scatter(
+        x_train.numpy(), y_train.numpy(), color="blue", s=50, label="Train Data"
+    )
+    plt.scatter(
+        x_valid.numpy(), y_valid.numpy(), color="red", s=50, label="Validation Data"
+    )
+    plt.plot(x_range.numpy(), y_pred.T, color="green", label="Model Inference")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title("Inference of the RBF Linear Model")
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_sin_rbf_lr_inference.png")
 
 
 if __name__ == "__main__":
