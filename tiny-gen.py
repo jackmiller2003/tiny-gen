@@ -1340,7 +1340,7 @@ def experiment_grokking_plain_with_vafe(args):
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 300
+    epochs = 2000
     number_training_samples = 1000
     number_validation_samples = 200
     random_seed = 0
@@ -1391,7 +1391,7 @@ def experiment_grokking_plain_with_vafe(args):
         observer=observer,
     )
 
-    observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=True)
+    observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=False)
 
 
 if __name__ == "__main__":

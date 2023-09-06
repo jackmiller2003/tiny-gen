@@ -6,3 +6,4 @@ weights
 __pycache__
 experiments
 external/*
+tmp/*
