@@ -39,8 +39,15 @@ from src.dataset import (
     PolynomialTaskTwo,
     NoisySineWaveTask,
     combine_datasets,
+    generate_zero_one_classification,
 )
-from src.model import ExactGPModel, ExactMarginalLikelihood, ExpandableModel, TinyModel
+from src.model import (
+    ExactGPModel,
+    ExactMarginalLikelihood,
+    ExpandableModel,
+    TinyModel,
+    ApproxGPModel,
+)
 from src.plot import plot_validation_and_accuracy_from_observers
 from src.train import Observer, train_model, train_GP_model
 from tools import plot_landsacpes_of_GP_model
@@ -1550,160 +1557,305 @@ def experiment_grokking_plain_gp_classification_toy():
     GP classification?
     """
 
-    torch.manual_seed(42)
-    np.random.seed(42)
-    import pdb
+    path_of_experiment = Path("experiments/grokking_plain_gp_classification_toy")
 
-    import gpytorch
-    import matplotlib.pyplot as plt
-    from gpytorch.models import ApproximateGP
-    from gpytorch.variational import (
-        CholeskyVariationalDistribution,
-        UnwhitenedVariationalStrategy,
-    )
-    from tqdm import tqdm
+    os.makedirs(path_of_experiment, exist_ok=True)
 
-    class GPModel(ApproximateGP):
-        def __init__(self, x_train):
-            N, D = x_train.size(0), x_train.size(1)
-            var_dist = CholeskyVariationalDistribution(N)
-            var_stra = UnwhitenedVariationalStrategy(
-                self, x_train, var_dist, learn_inducing_locations=False
-            )
-            super(GPModel, self).__init__(var_stra)
-            self.mean_module = gpytorch.means.ConstantMean()
-            self.covar_module = gpytorch.kernels.ScaleKernel(
-                gpytorch.kernels.RBFKernel(ard_num_dims=D)
-            )
-
-        def forward(self, x):
-            x_mean = self.mean_module(x)
-            x_covar = self.covar_module(x)
-            latent_pred = gpytorch.distributions.MultivariateNormal(x_mean, x_covar)
-            return latent_pred
-
-    x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
-    y = ((x > 0) * 1).to(torch.float)
-    y = y.squeeze()
-
-    x_train, y_train = x[:20, :], y[:20]
-    x_valid, y_valid = x[80:, :], y[80:]
-
+    verbose = False
     learning_rate = 5e-3
-    epochs = 2000
+    epochs = 750
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = GPModel(x_train)
-    likelihood = gpytorch.likelihoods.BernoulliLikelihood()
+    all_train_accs, all_valid_accs, all_train_lps, all_valid_lps, all_vfes = (
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
 
-    model.covar_module.base_kernel.lengthscale = 0.005
+    for random_seed in tqdm([42, 52, 62, 72, 82]):
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
 
-    model.to(device)
-    likelihood.to(device)
-    x_train = x_train.to(device)
-    y_train = y_train.to(device)
-    x_valid = x_valid.to(device)
-    y_valid = y_valid.to(device)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    model.train()
-    likelihood.train()
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, y_train.numel())
-    train_accs, valid_accs = [], []
-    train_lps, valid_lps = [], []
-    lengthscales = []
-    vfes = []
-    epochs_ls = [0, 10, 50, 500]
-    # epochs_ls = [0, 1, 2]
-    for i in tqdm(range(epochs)):
-        optimizer.zero_grad()
-        output = model(x_train)
-        loss = -mll(output, y_train)
-        loss.backward()
-
-        model.eval()
-        output = model(x_train)
-        train_preds = likelihood(output)
-        valid_output = model(x_valid)
-        valid_preds = likelihood(valid_output)
-        model.train()
-
-        train_pred_class = train_preds.mean.ge(0.5)
-        valid_pred_class = valid_preds.mean.ge(0.5)
-        train_acc = (train_pred_class == y_train).sum() / x_train.shape[0]
-        valid_acc = (valid_pred_class == y_valid).sum() / x_valid.shape[0]
-        train_lp = train_preds.log_prob(y_train).mean()
-        valid_lp = valid_preds.log_prob(y_valid).mean()
-        train_accs.append(train_acc.detach().cpu())
-        train_lps.append(train_lp.detach().cpu())
-        valid_accs.append(valid_acc.detach().cpu())
-        valid_lps.append(valid_lp.detach().cpu())
-        vfes.append(loss.detach().cpu())
-
-        print(
-            "Iter %d/%d - Loss: %.3f, train acc: %.3f, valid acc: %.3f, train lp: %.3f, valid lp %.3f"
-            % (i + 1, epochs, loss.item(), train_acc, valid_acc, train_lp, valid_lp)
+        x_train, y_train, x_valid, y_valid = generate_zero_one_classification(
+            device, random_seed
         )
 
-        if i in epochs_ls:
-            lengthscales.append(
-                model.covar_module.base_kernel.lengthscale.detach().cpu().numpy()
-            )
+        model = ApproxGPModel(x_train)
+        likelihood = gpytorch.likelihoods.BernoulliLikelihood()
+
+        model.covar_module.base_kernel.lengthscale = 0.005
+
+        model.to(device)
+        likelihood.to(device)
+
+        model.train()
+        likelihood.train()
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        mll = gpytorch.mlls.VariationalELBO(likelihood, model, y_train.numel())
+        train_accs, valid_accs = [], []
+        train_lps, valid_lps = [], []
+        lengthscales = []
+        vfes = []
+        epochs_ls = [0, 10, 50, 500]
+        # epochs_ls = [0, 1, 2]
+        for i in range(epochs):
+            optimizer.zero_grad()
+            output = model(x_train)
+            loss = -mll(output, y_train)
+            loss.backward()
 
             model.eval()
-            x = torch.from_numpy(np.linspace(-1, 1, 300)).to(torch.float).to(device)
-            plt.figure()
-            plt.plot(x_train.cpu(), y_train.cpu(), "+k")
-            pred = model(x)
-            m, v = pred.mean.detach(), pred.variance.detach()
-            plt.plot(x.cpu(), m.cpu(), "-b")
-            plt.fill_between(
-                x.cpu(),
-                m.cpu() + 2 * torch.sqrt(v.cpu()),
-                m.cpu() - 2 * torch.sqrt(v.cpu()),
-                color="b",
-                alpha=0.3,
-            )
-            observed_pred = likelihood(pred)
-            pred_labels = observed_pred.mean.ge(0.5).detach()
-            plt.plot(x.cpu(), pred_labels.cpu(), "-r")
-            plt.ylim([-1, 2])
+            output = model(x_train)
+            train_preds = likelihood(output)
+            valid_output = model(x_valid)
+            valid_preds = likelihood(valid_output)
+            model.train()
 
-            plt.savefig("tmp/gpc_toy_pred_%d.png" % i)
+            train_pred_class = train_preds.mean.ge(0.5)
+            valid_pred_class = valid_preds.mean.ge(0.5)
+            train_acc = (train_pred_class == y_train).sum() / x_train.shape[0]
+            valid_acc = (valid_pred_class == y_valid).sum() / x_valid.shape[0]
+            train_lp = train_preds.log_prob(y_train).mean()
+            valid_lp = valid_preds.log_prob(y_valid).mean()
+            train_accs.append(train_acc.detach().cpu())
+            train_lps.append(train_lp.detach().cpu())
+            valid_accs.append(valid_acc.detach().cpu())
+            valid_lps.append(valid_lp.detach().cpu())
+            vfes.append(loss.detach().cpu())
 
-        optimizer.step()
+            if verbose:
+                print(
+                    "Iter %d/%d - Loss: %.3f, train acc: %.3f, valid acc: %.3f, train lp: %.3f, valid lp %.3f"
+                    % (
+                        i + 1,
+                        epochs,
+                        loss.item(),
+                        train_acc,
+                        valid_acc,
+                        train_lp,
+                        valid_lp,
+                    )
+                )
+
+            if i in epochs_ls:
+                lengthscales.append(
+                    model.covar_module.base_kernel.lengthscale.detach().cpu().numpy()
+                )
+
+                model.eval()
+                x = torch.from_numpy(np.linspace(-1, 1, 300)).to(torch.float).to(device)
+                plt.figure()
+                plt.plot(x_train.cpu(), y_train.cpu(), "+k")
+                pred = model(x)
+                m, v = pred.mean.detach(), pred.variance.detach()
+                plt.plot(x.cpu(), m.cpu(), "-b")
+                plt.fill_between(
+                    x.cpu(),
+                    m.cpu() + 2 * torch.sqrt(v.cpu()),
+                    m.cpu() - 2 * torch.sqrt(v.cpu()),
+                    color="b",
+                    alpha=0.3,
+                )
+                observed_pred = likelihood(pred)
+                pred_labels = observed_pred.mean.ge(0.5).detach()
+                plt.plot(x.cpu(), pred_labels.cpu(), "-r")
+                plt.ylim([-1, 2])
+
+                plt.savefig("tmp/gpc_toy_pred_%d.png" % i)
+
+            optimizer.step()
+
+        all_train_accs.append(train_accs)
+        all_valid_accs.append(valid_accs)
+        all_train_lps.append(train_lps)
+        all_valid_lps.append(valid_lps)
+        all_vfes.append(vfes)
+
+    all_train_accs = np.array(all_train_accs)
+    all_valid_accs = np.array(all_valid_accs)
+    all_train_lps = np.array(all_train_lps)
+    all_valid_lps = np.array(all_valid_lps)
+    all_vfes = np.array(all_vfes)
+
+    avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
+        axis=0
+    )
+    avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
+        axis=0
+    )
+    avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(axis=0)
+    avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(axis=0)
+    avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0)
+
+    epoch_range = range(1, epochs + 1)
+    plt.figure()
+    plt.plot(epoch_range, avg_train_accs, "-r", label="train accuracy")
+    plt.fill_between(
+        epoch_range,
+        avg_train_accs - std_train_accs,
+        avg_train_accs + std_train_accs,
+        color="r",
+        alpha=0.3,
+    )
+    plt.plot(epoch_range, avg_valid_accs, "-b", label="validation accuracy")
+    plt.fill_between(
+        epoch_range,
+        avg_valid_accs - std_valid_accs,
+        avg_valid_accs + std_valid_accs,
+        color="b",
+        alpha=0.3,
+    )
+
+    plt.legend(loc="lower right")
+    plt.xscale("log")
+    plt.savefig(
+        path_of_experiment / Path("gpc_toy_acc_averaged.pdf"), bbox_inches="tight"
+    )
 
     plt.figure()
-    plt.plot(np.arange(epochs) + 1, train_accs, "-r", label="train")
-    plt.plot(np.arange(epochs) + 1, valid_accs, "-b", label="validation")
-    for i, epoch in enumerate(epochs_ls):
-        plt.axvline(epoch + 1, color="k", alpha=0.3)
+
+    # Plot the averaged VFE with the shaded area for standard deviation
+    plt.plot(epoch_range, avg_vfes, "-k", label="Variational Free Energy (VFE)")
+    plt.fill_between(
+        epoch_range, avg_vfes - std_vfes, avg_vfes + std_vfes, color="k", alpha=0.3
+    )
+
+    # Configure plot
+    plt.xlabel("Epoch")
+    plt.ylabel("Variational Free Energy")
     plt.xscale("log")
-    plt.xlabel("epoch")
-    plt.ylabel("accuracy")
-    plt.legend()
-    plt.savefig("tmp/gpc_toy_acc.png")
+    plt.legend(loc="lower right")
+
+    # Save the plot
+    plt.savefig(
+        path_of_experiment / Path("gpc_toy_vfe_averaged.pdf"), bbox_inches="tight"
+    )
+
+    # Create a figure for Log Probabilities
+    plt.figure()
+
+    # Plot the averaged train log probabilities with the shaded area for standard deviation
+    plt.plot(epoch_range, avg_train_lps, "-r", label="Train Log Probabilities")
+    plt.fill_between(
+        epoch_range,
+        avg_train_lps - std_train_lps,
+        avg_train_lps + std_train_lps,
+        color="r",
+        alpha=0.3,
+    )
+
+    # Plot the averaged validation log probabilities with the shaded area for standard deviation
+    plt.plot(epoch_range, avg_valid_lps, "-b", label="Validation Log Probabilities")
+    plt.fill_between(
+        epoch_range,
+        avg_valid_lps - std_valid_lps,
+        avg_valid_lps + std_valid_lps,
+        color="b",
+        alpha=0.3,
+    )
+
+    # Configure plot
+    plt.xlabel("Epoch")
+    plt.ylabel("Log Probabilities")
+    plt.xscale("log")
+    plt.legend(loc="upper left")
+
+    # Save the plot
+    plt.savefig(
+        path_of_experiment / Path("gpc_toy_log_probs_averaged.pdf"), bbox_inches="tight"
+    )
 
     plt.figure()
-    plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
-    plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
-    for i, epoch in enumerate(epochs_ls):
-        plt.axvline(epoch + 1, color="k", alpha=0.3)
-    plt.xscale("log")
-    plt.xlabel("epoch")
-    plt.ylabel("log prob")
-    plt.legend()
-    plt.savefig("tmp/gpc_toy_lp.png")
 
-    plt.figure()
-    plt.plot(np.arange(epochs) + 1, vfes, "-k")
-    for i, epoch in enumerate(epochs_ls):
-        plt.axvline(epoch + 1, color="k", alpha=0.3)
-    plt.xscale("log")
-    plt.xlabel("epoch")
-    plt.ylabel("variational free energy")
-    plt.savefig("tmp/gpc_toy_vfe.png")
+    # Set up a subplot grid with 1 row and 2 columns, and double the width of the individual plots
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+    # First subplot for accuracies
+    axes[0].plot(epoch_range, avg_train_accs, "-r", label="Train Accuracy")
+    axes[0].fill_between(
+        epoch_range,
+        avg_train_accs - std_train_accs,
+        avg_train_accs + std_train_accs,
+        color="r",
+        alpha=0.3,
+    )
+    axes[0].plot(epoch_range, avg_valid_accs, "-b", label="Validation Accuracy")
+    axes[0].fill_between(
+        epoch_range,
+        avg_valid_accs - std_valid_accs,
+        avg_valid_accs + std_valid_accs,
+        color="b",
+        alpha=0.3,
+    )
+    axes[0].set_xscale("log")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Accuracy")
+    axes[0].legend(loc="lower right")
+
+    # Second subplot for log probabilities
+    axes[1].plot(epoch_range, avg_train_lps, "-r", label="Train Log Probabilities")
+    axes[1].fill_between(
+        epoch_range,
+        avg_train_lps - std_train_lps,
+        avg_train_lps + std_train_lps,
+        color="r",
+        alpha=0.3,
+    )
+    axes[1].plot(epoch_range, avg_valid_lps, "-b", label="Validation Log Probabilities")
+    axes[1].fill_between(
+        epoch_range,
+        avg_valid_lps - std_valid_lps,
+        avg_valid_lps + std_valid_lps,
+        color="b",
+        alpha=0.3,
+    )
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Log Probabilities")
+    axes[1].legend(loc="upper left")
+
+    # Adjust space between subplots
+    plt.tight_layout()
+
+    # Save the combined plot
+    plt.savefig(
+        path_of_experiment / Path("gpc_toy_combined_averaged.pdf"), bbox_inches="tight"
+    )
+
+    # plt.figure()
+    # plt.plot(np.arange(epochs) + 1, train_accs, "-r", label="train")
+    # plt.plot(np.arange(epochs) + 1, valid_accs, "-b", label="validation")
+    # for i, epoch in enumerate(epochs_ls):
+    #     plt.axvline(epoch + 1, color="k", alpha=0.3)
+    # plt.xscale("log")
+    # plt.xlabel("epoch")
+    # plt.ylabel("accuracy")
+    # plt.legend()
+    # plt.savefig("tmp/gpc_toy_acc.png")
+
+    # plt.figure()
+    # plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
+    # plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
+    # for i, epoch in enumerate(epochs_ls):
+    #     plt.axvline(epoch + 1, color="k", alpha=0.3)
+    # plt.xscale("log")
+    # plt.xlabel("epoch")
+    # plt.ylabel("log prob")
+    # plt.legend()
+    # plt.savefig("tmp/gpc_toy_lp.png")
+
+    # plt.figure()
+    # plt.plot(np.arange(epochs) + 1, vfes, "-k")
+    # for i, epoch in enumerate(epochs_ls):
+    #     plt.axvline(epoch + 1, color="k", alpha=0.3)
+    # plt.xscale("log")
+    # plt.xlabel("epoch")
+    # plt.ylabel("variational free energy")
+    # plt.savefig("tmp/gpc_toy_vfe.png")
 
 
 def experiment_grokking_plain_gp_classification():

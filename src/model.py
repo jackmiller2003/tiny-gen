@@ -11,6 +11,18 @@ import numpy as np
 import random
 import math
 
+torch.manual_seed(42)
+np.random.seed(42)
+
+import gpytorch
+import matplotlib.pyplot as plt
+from gpytorch.models import ApproximateGP
+from gpytorch.variational import (
+    CholeskyVariationalDistribution,
+    UnwhitenedVariationalStrategy,
+)
+from tqdm import tqdm
+
 
 class TinyModel(nn.Module):
     """
@@ -231,6 +243,26 @@ class ExactGPModel(gpytorch.models.ExactGP):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+class ApproxGPModel(ApproximateGP):
+    def __init__(self, x_train):
+        N, D = x_train.size(0), x_train.size(1)
+        var_dist = CholeskyVariationalDistribution(N)
+        var_stra = UnwhitenedVariationalStrategy(
+            self, x_train, var_dist, learn_inducing_locations=False
+        )
+        super(ApproxGPModel, self).__init__(var_stra)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.RBFKernel(ard_num_dims=D)
+        )
+
+    def forward(self, x):
+        x_mean = self.mean_module(x)
+        x_covar = self.covar_module(x)
+        latent_pred = gpytorch.distributions.MultivariateNormal(x_mean, x_covar)
+        return latent_pred
 
 
 def mvn_log_prob(dist, value: torch.Tensor) -> torch.Tensor:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import TensorDataset
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 import random
 import numpy as np
 from sympy import mod_inverse
@@ -705,13 +705,25 @@ def combine_datasets(
     return TensorDataset(combined_data, combined_labels)
 
 
-class ZeroOneClassificationDataset(Dataset):
-    def __init__(self, length=100):
-        self.data = torch.from_numpy(np.random.rand(length, 1) - 0.5).to(torch.float32)
-        self.labels = ((self.data > 0) * 1).squeeze().to(torch.float32)
+def generate_zero_one_classification(device: Any, seed:int):
+    """
+    Since we don't iterate through the dataset for the zero one classification
+    task, we just generate what we need here.
+    """
 
-    def __len__(self):
-        return len(self.data)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
-    def __getitem__(self, idx):
-        return self.data[idx], self.labels[idx]
+    x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+    y = ((x > 0) * 1).to(torch.float)
+    y = y.squeeze()
+
+    x_train, y_train = x[:20, :], y[:20]
+    x_valid, y_valid = x[80:, :], y[80:]
+
+    x_train = x_train.to(device)
+    y_train = y_train.to(device)
+    x_valid = x_valid.to(device)
+    y_valid = y_valid.to(device)
+
+    return x_train, y_train, x_valid, y_valid
