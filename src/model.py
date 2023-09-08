@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import gpytorch
 from gpytorch.constraints import Positive
-from torch.utils.data import Dataset
 
 import numpy.typing as npt
 import numpy as np
@@ -189,7 +188,55 @@ class ExpandableModel(nn.Module):
         return x
 
 
-import torch
+class TinyLinearModel(nn.Module):
+    """
+    Small model for testing generalisation.
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        random_seed: int,
+        verbose: bool = True,
+    ) -> None:
+        """
+        Initialises network with parameters:
+        - input_size: int
+        - output_size: int
+        - hidden layer: int
+        """
+
+        # Sets all random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
+
+        super(TinyLinearModel, self).__init__()
+
+        self.input_size = input_size
+        self.output_size = output_size
+
+        self.fc1 = nn.Linear(self.input_size, self.output_size, bias=False)
+
+        # Initialise weights
+        nn.init.xavier_uniform_(self.fc1.weight)
+
+        # Determine if there is a GPU available and if so, move the model to GPU
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(self.device)
+
+        if verbose:
+            print(f"Model initialised on device: {self.device}")
+
+    def forward(self, x):
+        """
+        Completes a forward pass of the network
+        """
+
+        x = self.fc1(x)
+
+        return x
 
 
 class RBFLinearModel(torch.nn.Module):
