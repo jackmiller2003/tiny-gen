@@ -48,9 +48,20 @@ from src.model import (
     TinyModel,
     ApproxGPModel,
 )
+<<<<<<< HEAD
+=======
+from src.model import (
+    ExactGPModel,
+    ExactMarginalLikelihood,
+    ExpandableModel,
+    TinyModel,
+    RBFLinearModel,
+)
+>>>>>>> feat/rbf-linear-regression
 from src.plot import plot_validation_and_accuracy_from_observers
 from src.train import Observer, train_model, train_GP_model
 from tools import plot_landsacpes_of_GP_model
+from sklearn.model_selection import train_test_split
 
 
 def experiment_grokking_plain():
@@ -2258,6 +2269,383 @@ def experiment_parity_gp_classification_batch():
         path_of_experiment / Path("gp_parity_combined_averaged.pdf"),
         bbox_inches="tight",
     )
+
+
+def experiment_grokking_with_rbf_01_lr():
+    """
+    In this experiment, we hope to demonstrate grokking with the use of RBF kernels
+    and bayesian linear regression.
+
+    Some help was provided by: https://nbviewer.org/github/krasserm/bayesian-machine-learning/blob/dev/bayesian-linear-regression/bayesian_linear_regression.ipynb
+    """
+
+    # Dataset is same as toy GP case
+    np.random.seed(42)
+    torch.manual_seed(42)
+    x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+    y = ((x > 0) * 1).to(torch.float)
+    y = y.squeeze()
+    n_train = 6
+
+    # x_train = torch.from_numpy(
+    #     np.array([-0.5, -0.4, -0.05, 0.05, 0.3, 0.5], dtype=np.float32)
+    # )
+    # x_train = x_train.unsqueeze(1)
+    # y_train = torch.from_numpy(np.array([0, 0, 0, 1.0, 1.0, 1.0], dtype=np.float32))
+
+    x_train, y_train = x[:n_train, :], y[:n_train]
+    x_valid, y_valid = x[n_train:, :], y[n_train:]
+
+    # model = RBFLinearModel(rbf_means=torch.linspace(-1, 1, 5000), rbf_variance=4e-4)
+    model = RBFLinearModel(rbf_means=torch.linspace(-1, 1, 100), rbf_variance=0.0001)
+    wd = 0.01
+    # wd = 0.1
+    optimiser = torch.optim.SGD(model.parameters(), lr=1e-1, weight_decay=wd)
+
+    train_loss = []
+    val_loss = []
+    train_accs = []
+    val_accs = []
+    l2_terms = []
+    total_loss = []
+
+    for epoch in tqdm(range(5000)):
+        optimiser.zero_grad()
+
+        outputs = model(x_train)
+        # loss = torch.nn.functional.mse_loss(outputs.squeeze(), y_train)
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            outputs.squeeze(), y_train
+        )
+        l2_term = 0
+        for param in model.parameters():
+            l2_term += (param**2).sum() * wd
+        l2_terms.append(l2_term.detach().numpy())
+        # for param in model.parameters():
+        #     loss += param.abs().sum() * 0.01
+        acc = (((outputs.squeeze() > 0.5) == y_train) * 1.0).sum() / y_train.shape[0]
+
+        train_loss.append(loss.detach().numpy())
+        total_loss.append((loss + l2_term).detach().numpy())
+        train_accs.append(acc.item())
+
+        loss.backward()
+        optimiser.step()
+
+        model.eval()
+
+        val_outputs = model(x_valid)
+        # v_loss = torch.nn.functional.mse_loss(val_outputs.squeeze(), y_valid)
+        v_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            val_outputs.squeeze(), y_valid
+        )
+
+        val_loss.append(v_loss.detach().numpy())
+        val_acc = (
+            ((val_outputs.squeeze() > 0.5) == y_valid) * 1.0
+        ).sum() / y_valid.shape[0]
+        val_accs.append(val_acc.item())
+        print(loss.item(), v_loss.item())
+        print(acc.item(), val_acc.item())
+
+    plt.figure()
+
+    plt.plot(train_loss, label="train")
+    plt.plot(l2_terms, label="l2 term")
+    plt.plot(total_loss, label="total")
+    plt.plot(val_loss, label="validation")
+
+    plt.yscale("log")
+    plt.xscale("log")
+
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_rbf_lr_loss.png")
+
+    plt.figure()
+
+    plt.plot(train_accs, label="train")
+    plt.plot(val_accs, label="validation")
+
+    plt.yscale("log")
+    plt.xscale("log")
+
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_rbf_lr_acc.png")
+
+    # Plotting the inference
+    model.eval()  # Make sure the model is in evaluation mode
+
+    # Generate predictions over a range
+    x_range = torch.linspace(-0.6, 0.6, 200).view(
+        -1, 1
+    )  # Extend a bit for visualization purposes
+    # y_pred = model(x_range).detach().numpy()
+    y_pred = torch.nn.functional.sigmoid(model(x_range)).detach().numpy()
+
+    plt.figure()
+    plt.scatter(
+        x_valid.numpy(), y_valid.numpy(), color="red", s=50, label="Validation Data"
+    )
+    plt.scatter(
+        x_train.numpy(), y_train.numpy(), color="blue", s=50, label="Train Data"
+    )
+    plt.plot(x_range.numpy(), y_pred.T, color="green", label="Model Inference")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title("Inference of the RBF Linear Model")
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_rbf_lr_inference.png")
+
+
+def experiment_grokking_with_rbf_sin_lr():
+    """
+    In this experiment, we hope to demonstrate grokking with the use of RBF kernels on a sin
+    curve (with noise).
+
+    Some help was provided by: https://nbviewer.org/github/krasserm/bayesian-machine-learning/blob/dev/bayesian-linear-regression/bayesian_linear_regression.ipynb
+    """
+
+    # Dataset is same as toy GP case
+
+    x = torch.from_numpy(np.sort(5 * np.random.rand(400, 1), axis=0))
+
+    x = x.to(dtype=torch.float32)
+
+    y = torch.sin(x).ravel()
+    # y[::4] += 2 * (0.5 - np.random.rand(100))  # add noise
+
+    x_train, x_valid, y_train, y_valid = train_test_split(
+        x, y, test_size=0.4, random_state=42
+    )
+
+    y_train[::4] += 2 * (0.5 - np.random.rand(60))  # add noise
+
+    model = RBFLinearModel(rbf_means=torch.linspace(0, 5, 100), rbf_variance=0.1)
+
+    optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=1e-2)
+
+    train_loss = []
+    val_loss = []
+
+    for epoch in tqdm(range(500)):
+        optimiser.zero_grad()
+
+        outputs = model(x_train)
+
+        loss = torch.nn.functional.mse_loss(outputs.squeeze(), y_train)
+
+        train_loss.append(loss.detach().numpy())
+
+        loss.backward()
+        optimiser.step()
+
+        model.eval()
+
+        val_outputs = model(x_valid)
+        v_loss = torch.nn.functional.mse_loss(val_outputs.squeeze(), y_valid)
+
+        val_loss.append(v_loss.detach().numpy())
+
+    plt.figure()
+
+    plt.plot(train_loss, label="train")
+    plt.plot(val_loss, label="validation")
+
+    plt.yscale("log")
+
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_sin_rbf_lr_loss.png")
+
+    # Plotting the inference
+    model.eval()  # Make sure the model is in evaluation mode
+
+    # Generate predictions over a range
+    x_range = torch.linspace(0, 5, 500).view(
+        -1, 1
+    )  # Extend a bit for visualization purposes
+    y_pred = model(x_range).detach().numpy()
+
+    plt.figure()
+    plt.scatter(
+        x_train.numpy(), y_train.numpy(), color="blue", s=50, label="Train Data"
+    )
+    plt.scatter(
+        x_valid.numpy(), y_valid.numpy(), color="red", s=50, label="Validation Data"
+    )
+    plt.plot(x_range.numpy(), y_pred.T, color="green", label="Model Inference")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title("Inference of the RBF Linear Model")
+    plt.legend()
+
+    plt.savefig("tmp/grokking_with_sin_rbf_lr_inference.png")
+
+
+def experiment_grokking_plain_linear_regression():
+    """
+    Can we induce grokking on linear regression?
+    """
+
+    os.makedirs("experiments/grokking_plain_linear_regression", exist_ok=True)
+
+    # Setting seeds
+    random_seed = 0
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+
+    # we generate some data
+    x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+    y = 0.3 * x
+    y = y.to(torch.float)
+    y = y.squeeze()
+    n_train = 5
+
+    # we add spurious features
+    def add_features(x):
+        fs = [lambda x: x**2, lambda x: x**3, lambda x: torch.sin(100 * x)]
+        for f in fs:
+            x = torch.cat([x, f(x[:, 0]).unsqueeze(-1)], 1)
+        return x
+
+    x = add_features(x)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # split for train / validation
+    x_train, y_train = x[:n_train, :].to(device), y[:n_train].to(device)
+    x_valid, y_valid = x[n_train:, :].to(device), y[n_train:].to(device)
+    x_train_plot = x[:n_train, :].to(device)
+    x_valid_plot = x[n_train:].to(device)
+
+    # Extend a bit for visualization purposes
+    x_plot = torch.linspace(-1, 1, 500).view(-1, 1)
+    x_plot = add_features(x_plot)
+
+    x_plot = x_plot.to(device)
+
+    # we create a linear regression model
+    input_size = x_train.shape[1]
+    output_size = 1
+    from src.model import TinyLinearModel
+
+    model = TinyLinearModel(input_size, output_size, random_seed)
+
+    # change the init to induce grokking, we want to start in high complexity region
+    model.fc1.weight.data = torch.tensor([[0.005, 0.9, 0.9, 0.9]]).to(device)
+
+    # move model to device
+    model = model.to(device)
+
+    def gaussian_loss(y_pred, y, noise_var=0.002):
+        loss = torch.nn.functional.mse_loss(y_pred, y, reduction="sum")
+        loss /= noise_var
+        return loss
+
+    # def l2_norm(model, prior_mean=torch.tensor([[0, 0]]), prior_var=torch.tensor([[0.5, 0.01]])):
+    # def l2_norm(model, prior_mean=torch.tensor([[0, 0, 0, 0]]), prior_var=torch.tensor([[1, 0.05, 0.05, 0.05]])):
+    def l2_norm(
+        model,
+        prior_mean=torch.tensor([[0, 0, 0, 0]]),
+        prior_var=torch.tensor([[0.5, 0.5, 0.5, 0.5]]),
+    ):
+        norm = (model.fc1.weight - prior_mean.to(device)) ** 2 / prior_var.to(device)
+        return norm.sum()
+
+    def accuracy(y_pred, y):
+        """
+        if y_pred is above 0 and y is above 0, that's correct, and vice versa.
+        """
+        # Convert to binary labels: 1 for >0 and 0 for <=0
+        pred_labels = (y_pred > 0).float()
+        true_labels = (y > 0).float()
+
+        # Count correct predictions
+        correct = (pred_labels == true_labels).float().sum()
+
+        # Compute accuracy
+        acc = correct / y_pred.size(0)
+
+        return acc.item()
+
+    epochs = 20000
+    optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=0)
+    train_acc = []
+    val_acc = []
+    training_fit = []
+    valid_fit = []
+    training_total_loss = []
+    training_reg = []
+
+    def plot_pred(epoch):
+        y_pred = model(x_plot).squeeze().cpu().detach().numpy()
+
+        plt.figure()
+        plt.scatter(
+            x_valid[:, 0].cpu().numpy(),
+            y_valid.cpu().numpy(),
+            color="red",
+            s=50,
+            label="Validation Data",
+        )
+        plt.scatter(
+            x_train[:, 0].cpu().numpy(),
+            y_train.cpu().numpy(),
+            color="blue",
+            s=50,
+            label="Train Data",
+        )
+        plt.plot(x_plot[:, 0].cpu().numpy(), y_pred, color="green", label="Prediction")
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.title("linear regression with spurious features")
+        plt.legend()
+
+        plt.ylim([-1, 1])
+
+        plt.savefig("tmp/grokking_with_lr_inference_%d.png" % epoch)
+
+    plot_epochs = [0, 10, 100, 1000, 10000]
+    for epoch in tqdm(range(epochs)):
+        optimiser.zero_grad()
+        output = model(x_train)
+        data_fit = gaussian_loss(output.squeeze(), y_train) / n_train
+        l2_term = l2_norm(model) / n_train
+        total_loss = data_fit + l2_term
+        total_loss.backward()
+        optimiser.step()
+
+        training_reg.append(l2_term.item())
+        training_fit.append(data_fit.item())
+        training_total_loss.append(total_loss.item())
+
+        val_outputs = model(x_valid)
+        valid_data_fit = (
+            gaussian_loss(val_outputs.squeeze(), y_valid) / x_valid.shape[0]
+        )
+        valid_fit.append(valid_data_fit.item())
+
+        train_acc.append(accuracy(output.squeeze(), y_train))
+        val_acc.append(accuracy(val_outputs.squeeze(), y_valid))
+
+        if epoch in plot_epochs:
+            plot_pred(epoch)
+
+    if epochs > 0:
+        plt.figure()
+        t = np.arange(epochs) + 1
+        plt.plot(t, train_acc, label="Training accuracy", lw=2)
+        plt.plot(t, val_acc, label="Validation accuracy", lw=2)
+        plt.yscale("log")
+        plt.xscale("log")
+        plt.xlabel("iteration")
+        plt.ylabel("objective")
+        plt.legend()
+
+        plt.savefig("tmp/grokking_with_lr_acc.png")
 
 
 if __name__ == "__main__":

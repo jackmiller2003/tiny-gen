@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import gpytorch
 from gpytorch.constraints import Positive
-from torch.utils.data import Dataset
 
 import numpy.typing as npt
 import numpy as np
@@ -199,6 +198,90 @@ class ExpandableModel(nn.Module):
         x = self.layers[-1](x)
 
         return x
+
+
+class TinyLinearModel(nn.Module):
+    """
+    Small model for testing generalisation.
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        random_seed: int,
+        verbose: bool = True,
+    ) -> None:
+        """
+        Initialises network with parameters:
+        - input_size: int
+        - output_size: int
+        - hidden layer: int
+        """
+
+        # Sets all random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
+
+        super(TinyLinearModel, self).__init__()
+
+        self.input_size = input_size
+        self.output_size = output_size
+
+        self.fc1 = nn.Linear(self.input_size, self.output_size, bias=False)
+
+        # Initialise weights
+        nn.init.xavier_uniform_(self.fc1.weight)
+
+        # Determine if there is a GPU available and if so, move the model to GPU
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(self.device)
+
+        if verbose:
+            print(f"Model initialised on device: {self.device}")
+
+    def forward(self, x):
+        """
+        Completes a forward pass of the network
+        """
+
+        x = self.fc1(x)
+
+        return x
+
+
+class RBFLinearModel(torch.nn.Module):
+    def __init__(self, rbf_means: list, rbf_variance=0.2):
+        """
+        Initialises a linear model with radial basis functions (with help from Chat-GPT)
+        """
+        super(RBFLinearModel, self).__init__()
+
+        self.rbf_means = torch.tensor(rbf_means).float()
+        self.rbf_variance = rbf_variance
+
+        self.weights = torch.nn.Parameter(torch.randn(len(rbf_means), 1))
+        self.bias = torch.nn.Parameter(torch.randn(1))
+
+    def forward(self, x):
+        """
+        Completes a forward pass of the network
+        """
+        # Create radial basis functions
+        rbf_functions = []
+        for mean in self.rbf_means:
+            rbf_functions.append(
+                torch.exp(-torch.pow(x - mean, 2) / (2 * self.rbf_variance))
+            )
+
+        # Concatenate radial basis functions
+        x_rbf = torch.concat(rbf_functions, dim=1)
+
+        # Linear combination of the RBFs
+        out = self.weights.T @ x_rbf.T
+
+        return out
 
 
 # Taken from https://arxiv.org/pdf/2303.11873.pdf

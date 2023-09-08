@@ -309,11 +309,10 @@ def train_GP_model(
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    x_train = torch.tensor([x.clone().detach() for x, y in training_dataset]).to(device)
+    x_train = torch.tensor([x.clone().detach().numpy() for x, y in training_dataset]).to(device)
     y_train = torch.tensor([y.clone().detach() for x, y in training_dataset]).to(device)
 
-    x_valid = torch.tensor([x.clone().detach() for x, y in validation_dataset]).to(
+    x_valid = torch.tensor([x.clone().detach().numpy() for x, y in validation_dataset]).to(
         device
     )
     y_valid = torch.tensor([y.clone().detach() for x, y in validation_dataset]).to(
