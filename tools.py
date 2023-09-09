@@ -247,3 +247,73 @@ def plot_landsacpes_of_GP_model(
             plt.xlabel("epoch")
             plt.ylabel("objective, data fit and complexity")
             plt.savefig(path_to_plot / Path(f"gpr_{init_idx}_lml.pdf"))
+
+
+# we add spurious features
+def add_features_for_lr_classification(x):
+    fs = [lambda x: x**2, lambda x: x**3, lambda x: torch.sin(100 * x)]
+    for f in fs:
+        x = torch.cat([x, f(x[:, 0]).unsqueeze(-1)], 1)
+    return x
+
+
+def gaussian_loss(y_pred, y, noise_var=0.002):
+    loss = torch.nn.functional.mse_loss(y_pred, y, reduction="sum")
+    loss /= noise_var
+    return loss
+
+
+def l2_norm_for_lr(
+    model,
+    device,
+    prior_mean=torch.tensor([[0, 0, 0, 0]]),
+    prior_var=torch.tensor([[0.5, 0.5, 0.5, 0.5]]),
+):
+    norm = (model.fc1.weight - prior_mean.to(device)) ** 2 / prior_var.to(device)
+    return norm.sum()
+
+
+def accuracy_for_negative_positive(y_pred, y):
+    """
+    if y_pred is above 0 and y is above 0, that's correct, and vice versa.
+    """
+    # Convert to binary labels: 1 for >0 and 0 for <=0
+    pred_labels = (y_pred > 0).float()
+    true_labels = (y > 0).float()
+
+    # Count correct predictions
+    correct = (pred_labels == true_labels).float().sum()
+
+    # Compute accuracy
+    acc = correct / y_pred.size(0)
+
+    return acc.item()
+
+
+def plot_lr_pred(epoch, model, x_plot, x_valid, y_valid, x_train, y_train):
+    y_pred = model(x_plot).squeeze().cpu().detach().numpy()
+
+    plt.figure()
+    plt.scatter(
+        x_valid[:, 0].cpu().numpy(),
+        y_valid.cpu().numpy(),
+        color="red",
+        s=50,
+        label="Validation Data",
+    )
+    plt.scatter(
+        x_train[:, 0].cpu().numpy(),
+        y_train.cpu().numpy(),
+        color="blue",
+        s=50,
+        label="Train Data",
+    )
+    plt.plot(x_plot[:, 0].cpu().numpy(), y_pred, color="green", label="Prediction")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title("linear regression with spurious features")
+    plt.legend()
+
+    plt.ylim([-1, 1])
+
+    plt.savefig("tmp/grokking_with_lr_inference_%d.png" % epoch)

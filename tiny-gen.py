@@ -47,20 +47,19 @@ from src.model import (
     ExpandableModel,
     TinyModel,
     ApproxGPModel,
-)
-<<<<<<< HEAD
-=======
-from src.model import (
-    ExactGPModel,
-    ExactMarginalLikelihood,
-    ExpandableModel,
-    TinyModel,
     RBFLinearModel,
+    TinyLinearModel,
 )
->>>>>>> feat/rbf-linear-regression
 from src.plot import plot_validation_and_accuracy_from_observers
 from src.train import Observer, train_model, train_GP_model
-from tools import plot_landsacpes_of_GP_model
+from tools import (
+    plot_landsacpes_of_GP_model,
+    add_features_for_lr_classification,
+    gaussian_loss,
+    l2_norm_for_lr,
+    accuracy_for_negative_positive,
+    plot_lr_pred,
+)
 from sklearn.model_selection import train_test_split
 
 
@@ -1573,10 +1572,20 @@ def experiment_grokking_plain_gp_classification_toy():
     os.makedirs(path_of_experiment, exist_ok=True)
 
     verbose = False
-    learning_rate = 5e-3
-    epochs = 750
+    learning_rate = 1e-2
+    epochs = 1500
 
-    all_train_accs, all_valid_accs, all_train_lps, all_valid_lps, all_vfes = (
+    (
+        all_train_accs,
+        all_valid_accs,
+        all_train_lps,
+        all_valid_lps,
+        all_complexities,
+        all_data_fit,
+        all_vfes,
+    ) = (
+        [],
+        [],
         [],
         [],
         [],
@@ -1606,16 +1615,29 @@ def experiment_grokking_plain_gp_classification_toy():
         likelihood.train()
 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-        mll = gpytorch.mlls.VariationalELBO(likelihood, model, y_train.numel())
+        mll = gpytorch.mlls.VariationalELBO(
+            likelihood, model, y_train.numel(), beta=1, combine_terms=True
+        )
+        mll_not_combined = gpytorch.mlls.VariationalELBO(
+            likelihood, model, y_train.numel(), beta=1, combine_terms=False
+        )
         train_accs, valid_accs = [], []
         train_lps, valid_lps = [], []
         lengthscales = []
+        complexities = []
+        data_fits = []
         vfes = []
         epochs_ls = [0, 10, 50, 500]
         # epochs_ls = [0, 1, 2]
         for i in range(epochs):
             optimizer.zero_grad()
             output = model(x_train)
+            mll_out = mll_not_combined(output, y_train)
+            data_fit = mll_out[0]
+            complexity = mll_out[1]
+            complexities.append(complexity.detach().cpu())
+            data_fits.append(-data_fit.detach().cpu())
+            # print(f"Output: {mll_out}")
             loss = -mll(output, y_train)
             loss.backward()
 
@@ -1684,12 +1706,16 @@ def experiment_grokking_plain_gp_classification_toy():
         all_valid_accs.append(valid_accs)
         all_train_lps.append(train_lps)
         all_valid_lps.append(valid_lps)
+        all_complexities.append(complexities)
+        all_data_fit.append(data_fits)
         all_vfes.append(vfes)
 
     all_train_accs = np.array(all_train_accs)
     all_valid_accs = np.array(all_valid_accs)
     all_train_lps = np.array(all_train_lps)
     all_valid_lps = np.array(all_valid_lps)
+    all_complexities = np.array(all_complexities)
+    all_data_fit = np.array(all_data_fit)
     all_vfes = np.array(all_vfes)
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
@@ -1700,6 +1726,11 @@ def experiment_grokking_plain_gp_classification_toy():
     )
     avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(axis=0)
     avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(axis=0)
+    avg_complexities, std_complexities = (
+        all_complexities.mean(axis=0),
+        all_complexities.std(axis=0),
+    )
+    avg_data_fit, std_data_fit = all_data_fit.mean(axis=0), all_data_fit.std(axis=0)
     avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0)
 
     epoch_range = range(1, epochs + 1)
@@ -1807,35 +1838,34 @@ def experiment_grokking_plain_gp_classification_toy():
     axes[0].set_ylabel("Accuracy")
     axes[0].legend(loc="lower right")
 
-    # Second subplot for log probabilities
-    axes[1].plot(epoch_range, avg_train_lps, "-r", label="Train Log Probabilities")
+    # Second subplot for complexity
+    axes[1].plot(epoch_range, avg_complexities, "-r", label="Train Complexity")
     axes[1].fill_between(
         epoch_range,
-        avg_train_lps - std_train_lps,
-        avg_train_lps + std_train_lps,
+        avg_complexities - std_complexities,
+        avg_complexities + std_complexities,
         color="r",
         alpha=0.3,
     )
-    axes[1].plot(epoch_range, avg_valid_lps, "-b", label="Validation Log Probabilities")
+
+    axes[1].plot(epoch_range, avg_data_fit, "-b", label="Negative Train Data Fit")
     axes[1].fill_between(
         epoch_range,
-        avg_valid_lps - std_valid_lps,
-        avg_valid_lps + std_valid_lps,
+        avg_data_fit - std_data_fit,
+        avg_data_fit + std_data_fit,
         color="b",
         alpha=0.3,
     )
     axes[1].set_xscale("log")
     axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Log Probabilities")
-    axes[1].legend(loc="upper left")
+    axes[1].set_ylabel("Objective")
+    axes[1].legend(loc="upper right")
 
     # Adjust space between subplots
     plt.tight_layout()
 
     # Save the combined plot
-    plt.savefig(
-        path_of_experiment / Path("gpc_toy_combined_averaged.pdf"), bbox_inches="tight"
-    )
+    plt.savefig(path_of_experiment / Path("gp_zero_one.pdf"), bbox_inches="tight")
 
 
 def experiment_grokking_plain_gp_classification():
@@ -1974,16 +2004,17 @@ def experiment_grokking_plain_gp_classification():
     plt.ylabel("variational free energy")
     plt.savefig("tmp/gpc_vfe.png")
 
-    fig, axes = plt.subplots(len(epochs_ls), 1, sharex=True)
+    fig, axes = plt.subplots(len(epochs_ls), 1, sharex=True, figsize=(14, 10))
     for i, epoch in enumerate(epochs_ls):
         axes[i].bar(
             np.arange(input_size), 1 / lengthscales[i][0, :], label="epoch %d" % epoch
         )
-        axes[i].set_ylabel("1 / lengthscale")
-        axes[i].legend()
+        axes[i].set_ylabel("Inverse lengthscale")
+        axes[i].set_title("Epoch %d" % epoch)
+        # axes[i].legend()
 
-    axes[-1].set_xlabel("input dim")
-    plt.savefig("tmp/gpc_ls.png")
+    axes[-1].set_xlabel("Input dimension")
+    plt.savefig("tmp/gpc_ls.pdf", bbox_inches="tight")
 
 
 def experiment_parity_gp_classification_batch():
@@ -2007,7 +2038,17 @@ def experiment_parity_gp_classification_batch():
     verbose = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    all_train_accs, all_valid_accs, all_train_lps, all_valid_lps, all_vfes = (
+    (
+        all_train_accs,
+        all_valid_accs,
+        all_train_lps,
+        all_valid_lps,
+        all_complexities,
+        all_data_fit,
+        all_vfes,
+    ) = (
+        [],
+        [],
         [],
         [],
         [],
@@ -2059,15 +2100,25 @@ def experiment_parity_gp_classification_batch():
 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         mll = gpytorch.mlls.VariationalELBO(likelihood, model, y_train.numel())
+        mll_not_combined = gpytorch.mlls.VariationalELBO(
+            likelihood, model, y_train.numel(), combine_terms=False
+        )
         train_accs, valid_accs = [], []
         train_lps, valid_lps = [], []
         lengthscales = []
+        complexities = []
+        data_fits = []
         vfes = []
         epochs_ls = [10, 50, 150]
         # epochs_ls = [0, 1, 2]
         for i in range(epochs):
             optimizer.zero_grad()
             output = model(x_train)
+            mll_out = mll_not_combined(output, y_train)
+            data_fit = mll_out[0]
+            complexity = mll_out[1]
+            complexities.append(complexity.detach().cpu())
+            data_fits.append(-data_fit.detach().cpu())
             loss = -mll(output, y_train)
             loss.backward()
 
@@ -2115,12 +2166,16 @@ def experiment_parity_gp_classification_batch():
         all_valid_accs.append(valid_accs)
         all_train_lps.append(train_lps)
         all_valid_lps.append(valid_lps)
+        all_complexities.append(complexities)
+        all_data_fit.append(data_fits)
         all_vfes.append(vfes)
 
     all_train_accs = np.array(all_train_accs)
     all_valid_accs = np.array(all_valid_accs)
     all_train_lps = np.array(all_train_lps)
     all_valid_lps = np.array(all_valid_lps)
+    all_complexities = np.array(all_complexities)
+    all_data_fit = np.array(all_data_fit)
     all_vfes = np.array(all_vfes)
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
@@ -2131,6 +2186,11 @@ def experiment_parity_gp_classification_batch():
     )
     avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(axis=0)
     avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(axis=0)
+    avg_complexities, std_complexities = (
+        all_complexities.mean(axis=0),
+        all_complexities.std(axis=0),
+    )
+    avg_data_fit, std_data_fit = all_data_fit.mean(axis=0), all_data_fit.std(axis=0)
     avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0)
 
     epoch_range = range(1, epochs + 1)
@@ -2240,33 +2300,33 @@ def experiment_parity_gp_classification_batch():
     axes[0].legend(loc="lower right")
 
     # Second subplot for log probabilities
-    axes[1].plot(epoch_range, avg_train_lps, "-r", label="Train Log Probabilities")
+    axes[1].plot(epoch_range, avg_complexities, "-r", label="Complexities")
     axes[1].fill_between(
         epoch_range,
-        avg_train_lps - std_train_lps,
-        avg_train_lps + std_train_lps,
+        avg_complexities - std_complexities,
+        avg_complexities + std_complexities,
         color="r",
         alpha=0.3,
     )
-    axes[1].plot(epoch_range, avg_valid_lps, "-b", label="Validation Log Probabilities")
+    axes[1].plot(epoch_range, avg_data_fit, "-b", label="Negative Data Fit")
     axes[1].fill_between(
         epoch_range,
-        avg_valid_lps - std_valid_lps,
-        avg_valid_lps + std_valid_lps,
+        avg_data_fit - std_data_fit,
+        avg_data_fit + std_data_fit,
         color="b",
         alpha=0.3,
     )
     axes[1].set_xscale("log")
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Log Probabilities")
-    axes[1].legend(loc="upper left")
+    axes[1].legend(loc="upper right")
 
     # Adjust space between subplots
     plt.tight_layout()
 
     # Save the combined plot
     plt.savefig(
-        path_of_experiment / Path("gp_parity_combined_averaged.pdf"),
+        path_of_experiment / Path("gp_parity.pdf"),
         bbox_inches="tight",
     )
 
@@ -2485,167 +2545,164 @@ def experiment_grokking_with_rbf_sin_lr():
     plt.savefig("tmp/grokking_with_sin_rbf_lr_inference.png")
 
 
-def experiment_grokking_plain_linear_regression():
+def experiment_grokking_lr_classification():
     """
     Can we induce grokking on linear regression?
     """
 
-    os.makedirs("experiments/grokking_plain_linear_regression", exist_ok=True)
+    path_of_experiment = Path("experiments/grokking_lr_classification")
 
-    # Setting seeds
-    random_seed = 0
-    torch.manual_seed(random_seed)
-    np.random.seed(random_seed)
-
-    # we generate some data
-    x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
-    y = 0.3 * x
-    y = y.to(torch.float)
-    y = y.squeeze()
-    n_train = 5
-
-    # we add spurious features
-    def add_features(x):
-        fs = [lambda x: x**2, lambda x: x**3, lambda x: torch.sin(100 * x)]
-        for f in fs:
-            x = torch.cat([x, f(x[:, 0]).unsqueeze(-1)], 1)
-        return x
-
-    x = add_features(x)
-
+    os.makedirs(path_of_experiment, exist_ok=True)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    epochs = 5000
 
-    # split for train / validation
-    x_train, y_train = x[:n_train, :].to(device), y[:n_train].to(device)
-    x_valid, y_valid = x[n_train:, :].to(device), y[n_train:].to(device)
-    x_train_plot = x[:n_train, :].to(device)
-    x_valid_plot = x[n_train:].to(device)
+    all_train_accs, all_valid_accs, all_train_complexity = ([], [], [])
 
-    # Extend a bit for visualization purposes
-    x_plot = torch.linspace(-1, 1, 500).view(-1, 1)
-    x_plot = add_features(x_plot)
+    for random_seed in tqdm(range(0, 5)):
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
 
-    x_plot = x_plot.to(device)
+        # we generate some data
+        x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+        y = 0.3 * x
+        y = y.to(torch.float)
+        y = y.squeeze()
+        n_train = 2
 
-    # we create a linear regression model
-    input_size = x_train.shape[1]
-    output_size = 1
-    from src.model import TinyLinearModel
+        # torch.manual_seed(random_seed)
+        # np.random.seed(random_seed)
 
-    model = TinyLinearModel(input_size, output_size, random_seed)
+        x = add_features_for_lr_classification(x)
 
-    # change the init to induce grokking, we want to start in high complexity region
-    model.fc1.weight.data = torch.tensor([[0.005, 0.9, 0.9, 0.9]]).to(device)
+        # split for train / validation
+        x_train, y_train = x[:n_train, :].to(device), y[:n_train].to(device)
+        x_valid, y_valid = x[n_train:, :].to(device), y[n_train:].to(device)
+        x_train_plot = x[:n_train, :].to(device)
+        x_valid_plot = x[n_train:].to(device)
 
-    # move model to device
-    model = model.to(device)
+        # Extend a bit for visualization purposes
+        x_plot = torch.linspace(-1, 1, 500).view(-1, 1)
+        x_plot = add_features_for_lr_classification(x_plot)
 
-    def gaussian_loss(y_pred, y, noise_var=0.002):
-        loss = torch.nn.functional.mse_loss(y_pred, y, reduction="sum")
-        loss /= noise_var
-        return loss
+        x_plot = x_plot.to(device)
 
-    # def l2_norm(model, prior_mean=torch.tensor([[0, 0]]), prior_var=torch.tensor([[0.5, 0.01]])):
-    # def l2_norm(model, prior_mean=torch.tensor([[0, 0, 0, 0]]), prior_var=torch.tensor([[1, 0.05, 0.05, 0.05]])):
-    def l2_norm(
-        model,
-        prior_mean=torch.tensor([[0, 0, 0, 0]]),
-        prior_var=torch.tensor([[0.5, 0.5, 0.5, 0.5]]),
-    ):
-        norm = (model.fc1.weight - prior_mean.to(device)) ** 2 / prior_var.to(device)
-        return norm.sum()
+        # we create a linear regression model
+        input_size = x_train.shape[1]
+        output_size = 1
 
-    def accuracy(y_pred, y):
-        """
-        if y_pred is above 0 and y is above 0, that's correct, and vice versa.
-        """
-        # Convert to binary labels: 1 for >0 and 0 for <=0
-        pred_labels = (y_pred > 0).float()
-        true_labels = (y > 0).float()
+        model = TinyLinearModel(input_size, output_size, random_seed)
 
-        # Count correct predictions
-        correct = (pred_labels == true_labels).float().sum()
+        # change the init to induce grokking, we want to start in high complexity region
+        model.fc1.weight.data = torch.tensor([[0.0005, 0.9, 0.9, 0.9]]).to(device)
 
-        # Compute accuracy
-        acc = correct / y_pred.size(0)
+        # move model to device
+        model = model.to(device)
 
-        return acc.item()
+        optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=0)
+        train_acc = []
+        val_acc = []
+        training_fit = []
+        valid_fit = []
+        training_total_loss = []
+        training_reg = []
 
-    epochs = 20000
-    optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=0)
-    train_acc = []
-    val_acc = []
-    training_fit = []
-    valid_fit = []
-    training_total_loss = []
-    training_reg = []
+        plot_epochs = [0, 10, 100, 1000, 10000]
+        for epoch in range(epochs):
+            optimiser.zero_grad()
+            output = model(x_train)
+            data_fit = gaussian_loss(output.squeeze(), y_train) / n_train
+            l2_term = l2_norm_for_lr(model, device) / n_train
+            total_loss = data_fit + l2_term
+            total_loss.backward()
+            optimiser.step()
 
-    def plot_pred(epoch):
-        y_pred = model(x_plot).squeeze().cpu().detach().numpy()
+            training_reg.append(l2_term.item())
+            training_fit.append(data_fit.item())
+            training_total_loss.append(total_loss.item())
 
-        plt.figure()
-        plt.scatter(
-            x_valid[:, 0].cpu().numpy(),
-            y_valid.cpu().numpy(),
-            color="red",
-            s=50,
-            label="Validation Data",
-        )
-        plt.scatter(
-            x_train[:, 0].cpu().numpy(),
-            y_train.cpu().numpy(),
-            color="blue",
-            s=50,
-            label="Train Data",
-        )
-        plt.plot(x_plot[:, 0].cpu().numpy(), y_pred, color="green", label="Prediction")
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.title("linear regression with spurious features")
-        plt.legend()
+            val_outputs = model(x_valid)
+            valid_data_fit = (
+                gaussian_loss(val_outputs.squeeze(), y_valid) / x_valid.shape[0]
+            )
+            valid_fit.append(valid_data_fit.item())
 
-        plt.ylim([-1, 1])
+            train_acc.append(accuracy_for_negative_positive(output.squeeze(), y_train))
+            val_acc.append(
+                accuracy_for_negative_positive(val_outputs.squeeze(), y_valid)
+            )
 
-        plt.savefig("tmp/grokking_with_lr_inference_%d.png" % epoch)
+            # if epoch in plot_epochs:
+            #     plot_lr_pred(epoch, model, x_plot, x_valid, y_valid, x_train, y_train)
 
-    plot_epochs = [0, 10, 100, 1000, 10000]
-    for epoch in tqdm(range(epochs)):
-        optimiser.zero_grad()
-        output = model(x_train)
-        data_fit = gaussian_loss(output.squeeze(), y_train) / n_train
-        l2_term = l2_norm(model) / n_train
-        total_loss = data_fit + l2_term
-        total_loss.backward()
-        optimiser.step()
+        all_train_accs.append(train_acc)
+        all_valid_accs.append(val_acc)
+        all_train_complexity.append(training_reg)
 
-        training_reg.append(l2_term.item())
-        training_fit.append(data_fit.item())
-        training_total_loss.append(total_loss.item())
+    all_train_accs = np.array(all_train_accs)
+    all_valid_accs = np.array(all_valid_accs)
+    all_train_complexity = np.array(all_train_complexity)
 
-        val_outputs = model(x_valid)
-        valid_data_fit = (
-            gaussian_loss(val_outputs.squeeze(), y_valid) / x_valid.shape[0]
-        )
-        valid_fit.append(valid_data_fit.item())
+    avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
+        axis=0
+    )
 
-        train_acc.append(accuracy(output.squeeze(), y_train))
-        val_acc.append(accuracy(val_outputs.squeeze(), y_valid))
+    avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
+        axis=0
+    )
 
-        if epoch in plot_epochs:
-            plot_pred(epoch)
+    avg_train_complexity, std_train_complexity = (
+        all_train_complexity.mean(axis=0),
+        all_train_complexity.std(axis=0),
+    )
 
-    if epochs > 0:
-        plt.figure()
-        t = np.arange(epochs) + 1
-        plt.plot(t, train_acc, label="Training accuracy", lw=2)
-        plt.plot(t, val_acc, label="Validation accuracy", lw=2)
-        plt.yscale("log")
-        plt.xscale("log")
-        plt.xlabel("iteration")
-        plt.ylabel("objective")
-        plt.legend()
+    epoch_range = range(1, epochs + 1)
+    # Set up a subplot grid with 1 row and 2 columns, and double the width of the individual plots
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-        plt.savefig("tmp/grokking_with_lr_acc.png")
+    # First subplot for accuracies
+    axes[0].plot(epoch_range, avg_train_accs, "-r", label="Train Accuracy")
+    axes[0].fill_between(
+        epoch_range,
+        avg_train_accs - std_train_accs,
+        avg_train_accs + std_train_accs,
+        color="r",
+        alpha=0.3,
+    )
+    axes[0].plot(epoch_range, avg_valid_accs, "-b", label="Validation Accuracy")
+    axes[0].fill_between(
+        epoch_range,
+        avg_valid_accs - std_valid_accs,
+        avg_valid_accs + std_valid_accs,
+        color="b",
+        alpha=0.3,
+    )
+    axes[0].set_xscale("log")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Accuracy")
+    axes[0].legend(loc="lower right")
+
+    # Second subplot for log probabilities
+    axes[1].plot(epoch_range, avg_train_complexity, "-r", label="Train Complexity")
+    axes[1].fill_between(
+        epoch_range,
+        avg_train_complexity - std_train_complexity,
+        avg_train_complexity + std_train_complexity,
+        color="r",
+        alpha=0.3,
+    )
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Train Complexity")
+    axes[1].legend(loc="upper right")
+
+    # Adjust space between subplots
+    plt.tight_layout()
+
+    # Save the combined plot
+    plt.savefig(
+        path_of_experiment / Path("grokking_classification_combined.pdf"),
+        bbox_inches="tight",
+    )
 
 
 if __name__ == "__main__":

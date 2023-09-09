@@ -210,7 +210,7 @@ class TinyLinearModel(nn.Module):
         input_size: int,
         output_size: int,
         random_seed: int,
-        verbose: bool = True,
+        verbose: bool = False,
     ) -> None:
         """
         Initialises network with parameters:
