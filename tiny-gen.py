@@ -1309,6 +1309,8 @@ def experiment_training_on_openai_datasets():
     datasets = []
 
     for dataset in [
+        ParityTask,
+        ModuloAdditionTask,
         ModuloSubtractionTask,
         ModuloDivisionTask,
         PolynomialTask,
@@ -1420,6 +1422,177 @@ def experiment_training_on_openai_datasets():
                 f"experiments/training_on_openai_datasets/{datasets[i].__name__()}/combined"
             ),
         )
+
+
+def experiment_grokking_via_concealment():
+    """
+    In this experiment we wish to show that concealment is an effective strategy for inducing grokking.
+    """
+
+    os.makedirs("experiments/grokking_via_concealment/", exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 40
+    p = 7
+    parity_length = 3
+    hidden_size = 1000
+    epochs = 200
+    number_training_samples = 600
+    number_validation_samples = 200
+
+    dataset_grokking_gaps = []
+
+    for additional_length in [0, 10, 20, 40, 80]:
+        all_dataset_grokking_for_k = []
+
+        for random_seed in tqdm(range(0, 1)):
+            observers_of_datasets = []
+
+            datasets = []
+
+            for dataset in [
+                ParityTask,
+                ModuloAdditionTask,
+                ModuloSubtractionTask,
+                ModuloDivisionTask,
+                PolynomialTask,
+                PolynomialTaskTwo,
+                ModuloMultiplicationDoubleXTask,
+            ]:
+                if not dataset == ParityTask:
+                    datasets.append(
+                        dataset(
+                            num_samples=number_training_samples
+                            + number_validation_samples,
+                            random_seed=random_seed,
+                            modulo=p,
+                        )
+                    )
+                else:
+                    datasets.append(
+                        dataset(
+                            sequence_length=parity_length,
+                            num_samples=number_training_samples
+                            + number_validation_samples,
+                            random_seed=random_seed,
+                        )
+                    )
+
+            for dataset in datasets:
+                if not dataset == ParityTask:
+                    hidden_dataset = HiddenDataset(
+                        dataset=dataset,
+                        total_length=2 * p + additional_length,
+                        random_seed=random_seed,
+                    )
+                else:
+                    hidden_dataset = HiddenDataset(
+                        dataset=dataset,
+                        total_length=additional_length + parity_length,
+                        random_seed=random_seed,
+                    )
+
+                (
+                    hidden_training_dataset,
+                    hidden_validation_dataset,
+                ) = torch.utils.data.random_split(
+                    hidden_dataset,
+                    [number_training_samples, number_validation_samples],
+                )
+
+                if not dataset == ParityTask:
+                    model_hidden = TinyModel(
+                        input_size=2 * p + additional_length,
+                        hidden_layer_size=hidden_size,
+                        output_size=p,
+                        random_seed=random_seed,
+                    )
+                else:
+                    model_hidden = TinyModel(
+                        input_size=additional_length + parity_length,
+                        hidden_layer_size=hidden_size,
+                        output_size=p,
+                        random_seed=random_seed,
+                    )
+
+                (model_hidden, observer_hidden) = train_model(
+                    training_dataset=hidden_training_dataset,
+                    validation_dataset=hidden_validation_dataset,
+                    model=model_hidden,
+                    learning_rate=learning_rate,
+                    weight_decay=weight_decay,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    loss_function_label="cross-entropy",
+                    optimiser_function_label="sgd",
+                    progress_bar=True,
+                )
+
+                observers_of_datasets.append(observer_hidden)
+
+            dataset_grokking_for_k = []
+
+            for i, observer in enumerate(observers_of_datasets):
+                training_accuracy = observer.training_accuracy
+                validation_accuracy = observer.validation_accuracy
+
+                # Find point at which training accuracy is >95%
+                index_of_95 = np.where(training_accuracy > 0.95)[0][0]
+
+                # Find point at which validation accuracy is >95%
+                index_of_95_val = np.where(validation_accuracy > 0.95)[0][0]
+
+                dataset_grokking_for_k.append(index_of_95_val - index_of_95)
+
+            all_dataset_grokking_for_k.append(dataset_grokking_for_k)
+
+        # Average the dataset grokking gaps
+        all_dataset_grokking_for_k = np.array(all_dataset_grokking_for_k)
+        avg_dataset_grokking_for_k = np.mean(all_dataset_grokking_for_k, axis=0)
+        std_dataset_grokking_for_k = np.std(all_dataset_grokking_for_k, axis=0)
+
+        dataset_grokking_gaps.append(
+            [avg_dataset_grokking_for_k, std_dataset_grokking_for_k]
+        )
+
+    # Plot the results
+    plt.figure(figsize=(10, 6))
+
+    additional_lengths = [0, 10, 20, 40, 80]
+    dataset_names = [
+        "ParityTask",
+        "ModuloAdditionTask",
+        "ModuloSubtractionTask",
+        "ModuloDivisionTask",
+        "PolynomialTask",
+        "PolynomialTaskTwo",
+        "ModuloMultiplicationDoubleXTask",
+    ]
+
+    for i, dataset_name in enumerate(dataset_names):
+        avg_values = [item[0][i] for item in dataset_grokking_gaps]
+        std_values = [item[1][i] for item in dataset_grokking_gaps]
+
+        plt.errorbar(
+            additional_lengths,
+            avg_values,
+            yerr=std_values,
+            fmt="o-",
+            label=dataset_name,
+            capsize=5,
+        )
+
+    plt.xlabel("Additional Length")
+    plt.ylabel("Grokking Gap")
+    plt.title("Grokking Gap vs Additional Length for Various Datasets")
+    plt.legend(loc="best")
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.tight_layout()
+
+    plt.savefig("experiments/grokking_via_concealment/grokking_vs_length.png")
+    plt.show()
 
 
 def experiment_grokking_plain_gp_regression():
