@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import gpytorch
 from gpytorch.constraints import Positive
 
@@ -20,6 +21,7 @@ from gpytorch.variational import (
     CholeskyVariationalDistribution,
     UnwhitenedVariationalStrategy,
 )
+from src.vbnn_layers import GaussianLinear
 from tqdm import tqdm
 
 
@@ -117,6 +119,78 @@ class TinyModel(nn.Module):
         x = self.fc2(x)
 
         return x
+
+
+class TinyBayes(nn.Module):
+    """
+    Small BNN for testing generalisation
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_layer_size: int,
+        output_size: int,
+        random_seed: int,
+        normalise_output: bool = False,
+        verbose: bool = True,
+    ):
+        # Sets all random seeds
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+        random.seed(random_seed)
+
+        super(TinyBayes, self).__init__()
+
+        self.input_size = input_size
+        self.hidden_layer_size = hidden_layer_size
+        self.output_size = output_size
+        self.normalise_output = normalise_output
+
+        fc1 = GaussianLinear([self.input_size, self.hidden_layer_size])
+        fc2 = GaussianLinear([self.hidden_layer_size, self.output_size])
+        self.layers = nn.ModuleList()
+        self.layers.append(fc1)
+        self.layers.append(fc2)
+
+        # Determine if there is a GPU available and if so, move the model to GPU
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.to(self.device)
+
+        if verbose:
+            print(f"Model initialised on device: {self.device}")
+
+    def forward(self, x, y=None, local=True):
+        """
+        Completes a forward pass of the network
+        """
+
+        inputs = x
+        for layer in self.layers:
+            a = layer.forward(inputs, local)
+            inputs = torch.relu(a)
+        if self.normalise_output:
+            a = F.log_softmax(a, dim=1)
+
+        return a
+
+    def kl(self):
+        kl = 0
+        for layer in self.layers:
+            kl += layer.compute_variational_kl_term()
+        return kl
+
+    def look(self, layer: int) -> npt.NDArray[np.float64]:
+        """
+        Looks inside the model weights producing
+        """
+
+        if layer == 1:
+            return self.layers[0].weight_sample()[0].cpu().detach().numpy()
+        elif layer == 2:
+            return self.layers[1].weight_sample()[0].cpu().detach().numpy()
+        else:
+            raise ValueError("Invalid layer.")
 
 
 class ExpandableModel(nn.Module):
