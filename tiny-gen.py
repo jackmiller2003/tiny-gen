@@ -3034,14 +3034,14 @@ def experiment_grokking_plain_with_vafe():
     os.makedirs("experiments/grokking_plain_with_vafe/", exist_ok=True)
 
     weight_decay = 0
-    learning_rate = 5e-2
+    learning_rate = 1e-1
     batch_size = 32
-    input_size = 40
+    input_size = 30
     output_size = 2
     k = 3
     hidden_size = 200
     epochs = 1000
-    number_training_samples = 1000
+    number_training_samples = 600
     number_validation_samples = 200
     random_seed = 0
 
@@ -3070,25 +3070,17 @@ def experiment_grokking_plain_with_vafe():
         normalise_output=False,
     )
 
-    observer = Observer(
-        observation_settings={
-            "variational_free_energy": {},
-            "weights": {"frequency": 10, "layers": [1]},
-        },
-    )
-
     (model, observer) = train_model(
         training_dataset=training_dataset,
         validation_dataset=validation_dataset,
         model=model,
         learning_rate=learning_rate,
-        weight_decay=weight_decay,
+        weight_decay=0,
         epochs=epochs,
         batch_size=batch_size,
         loss_function_label="cross-entropy",
         optimiser_function_label="sgd",
         progress_bar=True,
-        observer=observer,
     )
 
     observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=False)
