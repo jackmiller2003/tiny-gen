@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 import copy
 import numpy as np
 from src.train import setup_optimiser_and_loss
+import matplotlib.gridspec as gridspec
 
 
 def plot_landsacpes_of_GP_model(
@@ -92,9 +93,14 @@ def plot_landsacpes_of_GP_model(
     model_init = copy.deepcopy(model)
 
     if trajectories_through_landscape:
-        init_ll = [-6, -6, 3]
-        init_ls = [-4, 4, 0]
-        colors = ["g", "y", "b"]
+        init_ll = [-6, -6, 0]
+        init_ls = [-4, 4, 2]
+        colors = ["g", "y", "w"]
+        ll_paths = []
+        ls_paths = []
+        all_train_mses = []
+        all_val_mses = []
+
         for init_idx, (ll_i, ls_i) in tqdm(enumerate(zip(init_ll, init_ls))):
             likelihood = copy.deepcopy(likelihood_init)
             model = copy.deepcopy(model_init)
@@ -164,33 +170,38 @@ def plot_landsacpes_of_GP_model(
                 fits.append(fit.detach().cpu())
                 comps.append(comp.detach().cpu())
 
-                if i in epochs_ls:
-                    lengthscales.append(
-                        model.covar_module.base_kernel.lengthscale.detach()
-                        .cpu()
-                        .numpy()
-                    )
-                    model.eval()
-                    x = torch.from_numpy(np.linspace(-2, 2, 100)).to(device)
-                    plt.figure(0)
-                    plt.plot(train_inputs.cpu(), train_targets.cpu(), "+k")
-                    pred = model(x)
-                    m, v = pred.mean.detach(), pred.variance.detach()
-                    plt.plot(x.cpu(), m.cpu(), "-b")
-                    plt.fill_between(
-                        x.cpu(),
-                        m.cpu() + 2 * torch.sqrt(v.cpu()),
-                        m.cpu() - 2 * torch.sqrt(v.cpu()),
-                        color="b",
-                        alpha=0.3,
-                    )
-                    plt.ylim(-3, 3)
+                # if i in epochs_ls:
+                #     lengthscales.append(
+                #         model.covar_module.base_kernel.lengthscale.detach()
+                #         .cpu()
+                #         .numpy()
+                #     )
+                #     model.eval()
+                #     x = torch.from_numpy(np.linspace(-2, 2, 100)).to(device)
+                #     plt.figure()
+                #     plt.plot(train_inputs.cpu(), train_targets.cpu(), "+k")
+                #     pred = model(x)
+                #     m, v = pred.mean.detach(), pred.variance.detach()
+                #     plt.plot(x.cpu(), m.cpu(), "-b")
+                #     plt.fill_between(
+                #         x.cpu(),
+                #         m.cpu() + 2 * torch.sqrt(v.cpu()),
+                #         m.cpu() - 2 * torch.sqrt(v.cpu()),
+                #         color="b",
+                #         alpha=0.3,
+                #     )
+                #     plt.ylim(-3, 3)
 
-                    plt.savefig(path_to_plot / Path(f"gpr_{init_idx}_pred_{i}.pdf"))
+                #     plt.savefig(path_to_plot / Path(f"gpr_{init_idx}_pred_{i}.pdf"))
 
                 optimiser.step()
 
             # --- Adding trajectories to existing landscape --- #
+
+            ll_paths.append(ll_path)
+            ls_paths.append(ls_path)
+            all_train_mses.append(train_mses)
+            all_val_mses.append(valid_mses)
 
             plt.figure(1)
             plt.plot(ls_path, ll_path, color="k")
@@ -221,7 +232,7 @@ def plot_landsacpes_of_GP_model(
             )
             plt.savefig(path_to_plot / Path("gpr_complexity_landscape_trajectory.pdf"))
 
-            plt.figure(0)
+            plt.figure()
             plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="train")
             plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="validation")
             plt.xscale("log")
@@ -230,7 +241,7 @@ def plot_landsacpes_of_GP_model(
             plt.legend()
             plt.savefig(path_to_plot / Path(f"gpr_{init_idx}_mse.pdf"))
 
-            plt.figure(0)
+            plt.figure()
             plt.plot(np.arange(epochs) + 1, train_lps, "-r", label="train")
             plt.plot(np.arange(epochs) + 1, valid_lps, "-b", label="validation")
             plt.xscale("log")
@@ -239,7 +250,7 @@ def plot_landsacpes_of_GP_model(
             plt.legend()
             plt.savefig(path_to_plot / Path(f"gpr_{init_idx}_lp.pdf"))
 
-            plt.figure(0)
+            plt.figure()
             plt.plot(np.arange(epochs) + 1, lmls, "-k")
             plt.plot(np.arange(epochs) + 1, fits, "-b")
             plt.plot(np.arange(epochs) + 1, comps, "-r")
@@ -247,6 +258,98 @@ def plot_landsacpes_of_GP_model(
             plt.xlabel("epoch")
             plt.ylabel("objective, data fit and complexity")
             plt.savefig(path_to_plot / Path(f"gpr_{init_idx}_lml.pdf"))
+
+        # Create a gridspec layout for the figure
+        gs = gridspec.GridSpec(3, 3, height_ratios=[1, 0.05, 1], hspace=0.5)
+
+        fig = plt.figure(figsize=(18, 12))
+
+        # Create the main plots using the gridspec
+        axs = [
+            [fig.add_subplot(gs[0, i]) for i in range(3)],
+            [fig.add_subplot(gs[2, i]) for i in range(3)],
+        ]
+
+        # Create axes for colorbars below each of the top row subplots
+        caxs = [fig.add_subplot(gs[1, i]) for i in range(3)]
+
+        # Plot all trajectories
+        for init_idx in range(0, 3):
+            for i in range(0, 3):
+                axs[0][i].plot(
+                    ls_paths[init_idx], ll_paths[init_idx], color="k", zorder=1
+                )
+                axs[0][i].plot(
+                    ls_paths[init_idx][0],
+                    ll_paths[init_idx][0],
+                    "s",
+                    markersize=15,
+                    color="w",
+                    zorder=200,
+                )
+
+                if init_idx == 0:
+                    axs[0][i].plot(
+                        ls_paths[init_idx][-1],
+                        ll_paths[init_idx][-1],
+                        "o",
+                        markersize=15,
+                        color="w",
+                        zorder=200,
+                    )
+
+                axs[0][i].text(
+                    ls_paths[init_idx][0],
+                    ll_paths[init_idx][0],
+                    chr(65 + init_idx),
+                    color="k",
+                    ha="center",  # horizontal alignment
+                    va="center",
+                    zorder=300,
+                )
+                label_offset = 0.01  # adjust this value for the best visual appearance
+
+            axs[1][init_idx].plot(
+                np.arange(epochs) + 1, all_train_mses[init_idx], "-r", label="train"
+            )
+            axs[1][init_idx].plot(
+                np.arange(epochs) + 1, all_val_mses[init_idx], "-b", label="validation"
+            )
+            axs[1][init_idx].set_xscale("log")
+            axs[1][init_idx].set_xlabel("Epoch")
+            axs[1][init_idx].set_ylabel("Mean squared error")
+            axs[1][init_idx].set_title(f"MSE for initialisation {chr(65 + init_idx)}")
+            if init_idx == 0:
+                axs[1][init_idx].legend()
+
+        # Marginal likelihood landscape
+        c1 = axs[0][0].pcolor(ln, ll, ml, cmap="RdBu")
+        fig.colorbar(c1, cax=caxs[0], orientation="horizontal")
+        axs[0][0].set_xlabel("log outputscale")
+        axs[0][0].set_ylabel("log lengthscale")
+        axs[0][0].plot(ls_path, ll_path, color="k")
+        axs[0][0].set_title("Trajectories through marginal likelihood landscape")
+
+        # Data fit landscape
+        c2 = axs[0][1].pcolor(ln, ll, fit_terms, cmap="RdBu")
+        fig.colorbar(c2, cax=caxs[1], orientation="horizontal")
+        axs[0][1].set_xlabel("log outputscale")
+        axs[0][1].set_ylabel("log lengthscale")
+        axs[0][1].set_title("Trajectories through data fit landscape")
+
+        # Complexity landscape
+        c3 = axs[0][2].pcolor(ln, ll, complexity_terms, cmap="RdBu")
+        fig.colorbar(c3, cax=caxs[2], orientation="horizontal")
+        axs[0][2].set_xlabel("log outputscale")
+        axs[0][2].set_ylabel("log lengthscale")
+        axs[0][2].set_title("Trajectories through complexity landscape")
+
+        # Save the combined figure
+        plt.tight_layout()  # Adjust the spacing between subplots for better appearance
+        plt.savefig(
+            path_to_plot / Path("combined_landscape_trajectory.pdf"),
+            bbox_inches="tight",
+        )
 
 
 # we add spurious features
@@ -317,3 +420,10 @@ def plot_lr_pred(epoch, model, x_plot, x_valid, y_valid, x_train, y_train):
     plt.ylim([-1, 1])
 
     plt.savefig("tmp/grokking_with_lr_inference_%d.png" % epoch)
+
+
+def get_rows_for_dataset(final_array, dataset_index, random_seeds):
+    rows_per_dataset = len(random_seeds)
+    start_index = dataset_index * rows_per_dataset
+    end_index = start_index + rows_per_dataset
+    return final_array[start_index:end_index]

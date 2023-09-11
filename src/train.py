@@ -309,12 +309,14 @@ def train_GP_model(
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    x_train = torch.tensor([x.clone().detach().numpy() for x, y in training_dataset]).to(device)
+    x_train = torch.tensor(
+        [x.clone().detach().numpy() for x, y in training_dataset]
+    ).to(device)
     y_train = torch.tensor([y.clone().detach() for x, y in training_dataset]).to(device)
 
-    x_valid = torch.tensor([x.clone().detach().numpy() for x, y in validation_dataset]).to(
-        device
-    )
+    x_valid = torch.tensor(
+        [x.clone().detach().numpy() for x, y in validation_dataset]
+    ).to(device)
     y_valid = torch.tensor([y.clone().detach() for x, y in validation_dataset]).to(
         device
     )
@@ -372,7 +374,7 @@ def setup_optimiser_and_loss(
         print("Using mse loss")
         loss_function = torch.nn.MSELoss()
     elif loss_function_label == "cross-entropy":
-        print("Using cross-entropy loss")
+        # print("Using cross-entropy loss")
         loss_function = torch.nn.CrossEntropyLoss()
     else:
         raise ValueError("Invalid loss function.")

@@ -58,9 +58,11 @@ from tools import (
     gaussian_loss,
     l2_norm_for_lr,
     accuracy_for_negative_positive,
-    plot_lr_pred,
+    get_rows_for_dataset,
 )
 from sklearn.model_selection import train_test_split
+import json
+from scipy.stats import pearsonr
 
 
 def experiment_grokking_plain():
@@ -1430,169 +1432,246 @@ def experiment_grokking_via_concealment():
     """
 
     os.makedirs("experiments/grokking_via_concealment/", exist_ok=True)
+    cache_file = "experiments/grokking_via_concealment/cache.json"
+
+    if os.path.exists(cache_file):
+        with open(cache_file) as f:
+            cache = json.load(f)
+    else:
+        cache = {}
 
     weight_decay = 1e-2
     learning_rate = 1e-1
     batch_size = 32
-    input_size = 40
     p = 7
-    parity_length = 3
     hidden_size = 1000
-    epochs = 200
+    epochs = 300
     number_training_samples = 600
     number_validation_samples = 200
 
-    dataset_grokking_gaps = []
+    threshold = 0.95
 
-    for additional_length in [0, 10, 20, 40, 80]:
+    additional_lengths = [0, 10, 20, 30, 40]
+
+    datasets_to_test = [
+        ModuloAdditionTask,
+        ModuloSubtractionTask,
+        ModuloDivisionTask,
+        PolynomialTask,
+        PolynomialTaskTwo,
+        ModuloMultiplicationDoubleXTask,
+    ]
+
+    random_seeds = list(range(0, 2))
+
+    array_of_gaps = np.zeros(
+        (len(additional_lengths), len(random_seeds), len(datasets_to_test))
+    )
+
+    for i, additional_length in enumerate(additional_lengths):
+        print(f"Working on additional length: {additional_length}")
         all_dataset_grokking_for_k = []
 
-        for random_seed in tqdm(range(0, 1)):
-            observers_of_datasets = []
+        for j, random_seed in enumerate(random_seeds):
+            print(f"Working on random seed: {random_seed}")
+            accuracies = []
 
             datasets = []
 
-            for dataset in [
-                ParityTask,
-                ModuloAdditionTask,
-                ModuloSubtractionTask,
-                ModuloDivisionTask,
-                PolynomialTask,
-                PolynomialTaskTwo,
-                ModuloMultiplicationDoubleXTask,
-            ]:
-                if not dataset == ParityTask:
-                    datasets.append(
-                        dataset(
-                            num_samples=number_training_samples
-                            + number_validation_samples,
-                            random_seed=random_seed,
-                            modulo=p,
-                        )
+            for dataset in datasets_to_test:
+                datasets.append(
+                    dataset(
+                        num_samples=number_training_samples + number_validation_samples,
+                        random_seed=random_seed,
+                        modulo=p,
                     )
-                else:
-                    datasets.append(
-                        dataset(
-                            sequence_length=parity_length,
-                            num_samples=number_training_samples
-                            + number_validation_samples,
-                            random_seed=random_seed,
-                        )
-                    )
+                )
 
-            for dataset in datasets:
-                if not dataset == ParityTask:
+            for k, dataset in enumerate(datasets):
+                found_key = False
+
+                cache_name = f"{additional_length}_{random_seed}_{dataset.__name__()}"
+
+                try:
+                    cache[cache_name]
+                    found_key = True
+                except KeyError:
+                    pass
+
+                if found_key:
+                    training_accuracy = cache[cache_name]["training_accuracy"]
+                    validation_accuracy = cache[cache_name]["validation_accuracy"]
+
+                else:
                     hidden_dataset = HiddenDataset(
                         dataset=dataset,
                         total_length=2 * p + additional_length,
                         random_seed=random_seed,
                     )
-                else:
-                    hidden_dataset = HiddenDataset(
-                        dataset=dataset,
-                        total_length=additional_length + parity_length,
-                        random_seed=random_seed,
+
+                    (
+                        hidden_training_dataset,
+                        hidden_validation_dataset,
+                    ) = torch.utils.data.random_split(
+                        hidden_dataset,
+                        [number_training_samples, number_validation_samples],
                     )
 
-                (
-                    hidden_training_dataset,
-                    hidden_validation_dataset,
-                ) = torch.utils.data.random_split(
-                    hidden_dataset,
-                    [number_training_samples, number_validation_samples],
-                )
-
-                if not dataset == ParityTask:
                     model_hidden = TinyModel(
                         input_size=2 * p + additional_length,
                         hidden_layer_size=hidden_size,
                         output_size=p,
                         random_seed=random_seed,
                     )
-                else:
-                    model_hidden = TinyModel(
-                        input_size=additional_length + parity_length,
-                        hidden_layer_size=hidden_size,
-                        output_size=p,
-                        random_seed=random_seed,
+
+                    (model_hidden, observer_hidden) = train_model(
+                        training_dataset=hidden_training_dataset,
+                        validation_dataset=hidden_validation_dataset,
+                        model=model_hidden,
+                        learning_rate=learning_rate,
+                        weight_decay=weight_decay,
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        loss_function_label="cross-entropy",
+                        optimiser_function_label="sgd",
+                        progress_bar=True,
                     )
 
-                (model_hidden, observer_hidden) = train_model(
-                    training_dataset=hidden_training_dataset,
-                    validation_dataset=hidden_validation_dataset,
-                    model=model_hidden,
-                    learning_rate=learning_rate,
-                    weight_decay=weight_decay,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    loss_function_label="cross-entropy",
-                    optimiser_function_label="sgd",
-                    progress_bar=True,
-                )
+                    training_accuracy = np.array(observer_hidden.training_accuracy)
+                    validation_accuracy = np.array(observer_hidden.validation_accuracy)
 
-                observers_of_datasets.append(observer_hidden)
+                    cache[cache_name] = {
+                        "training_accuracy": observer_hidden.training_accuracy,
+                        "validation_accuracy": observer_hidden.validation_accuracy,
+                    }
 
-            dataset_grokking_for_k = []
+                training_indices = np.where(np.array(training_accuracy) > threshold)
 
-            for i, observer in enumerate(observers_of_datasets):
-                training_accuracy = observer.training_accuracy
-                validation_accuracy = observer.validation_accuracy
+                if training_indices[0].size > 0:
+                    index_of_train = training_indices[0][0]
+                else:
+                    index_of_train = epochs
 
-                # Find point at which training accuracy is >95%
-                index_of_95 = np.where(training_accuracy > 0.95)[0][0]
+                validation_indices = np.where(np.array(validation_accuracy) > threshold)
 
-                # Find point at which validation accuracy is >95%
-                index_of_95_val = np.where(validation_accuracy > 0.95)[0][0]
+                if validation_indices[0].size > 0:
+                    index_of_val = validation_indices[0][0]
+                else:
+                    index_of_val = epochs
 
-                dataset_grokking_for_k.append(index_of_95_val - index_of_95)
+                print(f"Index of train: {index_of_train}")
+                print(f"Index of val: {index_of_val}")
 
-            all_dataset_grokking_for_k.append(dataset_grokking_for_k)
+                array_of_gaps[i, j, k] = index_of_val - index_of_train
 
-        # Average the dataset grokking gaps
-        all_dataset_grokking_for_k = np.array(all_dataset_grokking_for_k)
-        avg_dataset_grokking_for_k = np.mean(all_dataset_grokking_for_k, axis=0)
-        std_dataset_grokking_for_k = np.std(all_dataset_grokking_for_k, axis=0)
+    with open(cache_file, "w") as f:
+        json.dump(cache, f)
 
-        dataset_grokking_gaps.append(
-            [avg_dataset_grokking_for_k, std_dataset_grokking_for_k]
-        )
+    print(f"Array of gaps: {array_of_gaps}")
+
+    flattened_gaps = array_of_gaps.reshape(
+        len(additional_lengths) * len(random_seeds) * len(datasets_to_test)
+    )
+
+    repeated_lengths = np.repeat(
+        additional_lengths, len(random_seeds) * len(datasets_to_test)
+    )
+
+    coordinate_array = np.column_stack((repeated_lengths, flattened_gaps))
+
+    print(f"Flattened gaps: {flattened_gaps}")
+    print(f"Coordinate array: {coordinate_array}")
+
+    ln_y = np.where(coordinate_array[:, 1] <= 0, 0, np.log(coordinate_array[:, 1]))
+
+    # Perform linear fit
+    coefficients = np.polyfit(coordinate_array[:, 0], ln_y, 1)
+
+    # Extract exponential model parameters a and b
+    a = coefficients[0]
+    b = np.exp(coefficients[1])
+
+    correlation_coefficient, p_value = pearsonr(coordinate_array[:, 0], ln_y)
+
+    print(f"Total trend...")
+    print(f"Correlation coefficient: {correlation_coefficient}")
+    print(f"p-value: {p_value}")
+    print(f"Exponential coefficients: a={a}, b={b}\n\n")
 
     # Plot the results
     plt.figure(figsize=(10, 6))
 
-    additional_lengths = [0, 10, 20, 40, 80]
-    dataset_names = [
-        "ParityTask",
-        "ModuloAdditionTask",
-        "ModuloSubtractionTask",
-        "ModuloDivisionTask",
-        "PolynomialTask",
-        "PolynomialTaskTwo",
-        "ModuloMultiplicationDoubleXTask",
-    ]
+    dataset_names = [dataset.__name__ for dataset in datasets_to_test]
+
+    x = np.linspace(
+        min(coordinate_array[:, 0]), max(coordinate_array[:, 0]), 500
+    )  # Generate smoother x values for curve
+    y = b * np.exp(a * x)  # Calculate y-values for the exponential model
+    plt.plot(
+        x, y, "-", color="black", label="Exponential Fit"
+    )  # 'r-' specifies a red line
 
     for i, dataset_name in enumerate(dataset_names):
-        avg_values = [item[0][i] for item in dataset_grokking_gaps]
-        std_values = [item[1][i] for item in dataset_grokking_gaps]
+        # Filter final_array to get rows related to the current dataset
+        grokking_gaps_for_dataset = array_of_gaps[:, :, i]
+
+        # Flatten like before
+
+        grokking_gaps_for_dataset_flattened = grokking_gaps_for_dataset.reshape(
+            len(additional_lengths) * len(random_seeds)
+        )
+
+        repeated_lengths = np.repeat(additional_lengths, len(random_seeds))
+
+        coordinate_array_for_ds = np.column_stack(
+            (repeated_lengths, grokking_gaps_for_dataset_flattened)
+        )
+
+        print(f"Grokking gap for dataset: {grokking_gaps_for_dataset}")
+
+        # Calculate mean and std values from the grokking_gaps_for_dataset
+        avg_values = np.mean(grokking_gaps_for_dataset, axis=1)
+        std_values = np.std(grokking_gaps_for_dataset, axis=1)
+
+        print(f"Average values: {avg_values}")
+        print(f"Std values: {std_values}")
 
         plt.errorbar(
             additional_lengths,
             avg_values,
             yerr=std_values,
-            fmt="o-",
+            fmt="o",
             label=dataset_name,
             capsize=5,
         )
 
+        ln_y = np.where(
+            coordinate_array_for_ds[:, 1] <= 0, 0, np.log(coordinate_array_for_ds[:, 1])
+        )
+
+        # Perform linear fit
+        coefficients = np.polyfit(coordinate_array_for_ds[:, 0], ln_y, 1)
+
+        # Extract exponential model parameters a and b
+        a = coefficients[0]
+        b = np.exp(coefficients[1])
+
+        correlation_coefficient, p_value = pearsonr(coordinate_array_for_ds[:, 0], ln_y)
+
+        print(f"Dataset: {dataset_name}")
+        print(f"Correlation coefficient: {correlation_coefficient}")
+        print(f"P-value: {p_value}\n\n")
+
     plt.xlabel("Additional Length")
     plt.ylabel("Grokking Gap")
-    plt.title("Grokking Gap vs Additional Length for Various Datasets")
     plt.legend(loc="best")
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.tight_layout()
 
-    plt.savefig("experiments/grokking_via_concealment/grokking_vs_length.png")
-    plt.show()
+    plt.savefig(
+        "experiments/grokking_via_concealment/grokking_vs_length.pdf",
+        bbox_inches="tight",
+    )
 
 
 def experiment_grokking_plain_gp_regression():
