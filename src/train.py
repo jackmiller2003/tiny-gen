@@ -222,6 +222,11 @@ def train_model(
         weight_decay=weight_decay,
     )
 
+    vafe = False
+
+    if "variational_free_energy" in observer.observation_settings.keys():
+        vafe = True
+
     for epoch in tqdm(
         range(epochs),
         disable=not progress_bar,
@@ -242,7 +247,16 @@ def train_model(
 
             predictions = model(inputs)
 
-            loss = loss_function(predictions, targets)
+            if vafe:
+                loss_error = loss_function(predictions, targets)
+                complexity_loss = model.kl() / len(train_loader.dataset)
+                loss = loss_error + complexity_loss
+                # loss = loss_error
+
+                total_vafe += loss_error.item() + complexity_loss.item()
+                total_complexity += complexity_loss.item()
+            else:
+                loss = loss_function(predictions, targets)
 
             total_loss += loss.item()
             accuracy = get_accuracy(predictions, targets)
@@ -256,6 +270,11 @@ def train_model(
 
         observer.record_training_loss(total_loss / number_batches)
         observer.record_training_accuracy(total_accuracy / number_batches)
+
+        if vafe:
+            observer.variational_free_energy.append(total_vafe / number_batches)
+            observer.complexity_loss.append(total_complexity / number_batches)
+            observer.error_loss.append((total_vafe - total_complexity) / number_batches)
 
         total_val_loss = total_val_accuracy = number_val_batches = 0
 

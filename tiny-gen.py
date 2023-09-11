@@ -3040,7 +3040,7 @@ def experiment_grokking_plain_with_vafe():
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 1000
+    epochs = 1500
     number_training_samples = 600
     number_validation_samples = 200
     random_seed = 0
