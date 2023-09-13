@@ -180,15 +180,19 @@ class TinyBayes(nn.Module):
             kl += layer.compute_variational_kl_term()
         return kl
 
-    def look(self, layer: int) -> npt.NDArray[np.float64]:
+    def look(self, layer: int, mean=True) -> npt.NDArray[np.float64]:
         """
         Looks inside the model weights producing
         """
 
         if layer == 1:
-            return self.layers[0].weight_sample()[0].cpu().detach().numpy()
+            if mean: return self.layers[0].q_mean.cpu().detach().numpy()
+            else: return self.layers[0].weight_sample()[0].cpu().detach().numpy()
+            
+            
         elif layer == 2:
-            return self.layers[1].weight_sample()[0].cpu().detach().numpy()
+            if mean: return self.layers[1].q_mean.cpu().detach().numpy()
+            else: return self.layers[1].weight_sample()[0].cpu().detach().numpy()
         else:
             raise ValueError("Invalid layer.")
 

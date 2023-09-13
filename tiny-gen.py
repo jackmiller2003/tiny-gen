@@ -59,11 +59,17 @@ from tools import (
     gaussian_loss,
     l2_norm_for_lr,
     accuracy_for_negative_positive,
-    get_rows_for_dataset,
+    sample_in_subspace,
+    plot_combined_relationship,
 )
+from src.common import get_accuracy
 from sklearn.model_selection import train_test_split
 import json
 from scipy.stats import pearsonr
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import pickle
+import copy
 
 
 def experiment_grokking_plain():
@@ -1457,13 +1463,13 @@ def experiment_grokking_via_concealment():
     datasets_to_test = [
         ModuloAdditionTask,
         ModuloSubtractionTask,
-        ModuloDivisionTask,
-        PolynomialTask,
-        PolynomialTaskTwo,
-        ModuloMultiplicationDoubleXTask,
+        # ModuloDivisionTask,
+        # PolynomialTask,
+        # PolynomialTaskTwo,
+        # ModuloMultiplicationDoubleXTask,
     ]
 
-    random_seeds = list(range(0, 2))
+    random_seeds = list(range(0, 3))
 
     array_of_gaps = np.zeros(
         (len(additional_lengths), len(random_seeds), len(datasets_to_test))
@@ -3040,69 +3046,8 @@ def experiment_grokking_plain_with_vafe():
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 1500
+    epochs = 500
     number_training_samples = 600
-    number_validation_samples = 200
-    random_seed = 0
-
-    entire_dataset = ParityTask(
-        sequence_length=k,
-        num_samples=number_training_samples + number_validation_samples,
-        random_seed=random_seed,
-    )
-
-    hidden_dataset = HiddenDataset(
-        dataset=entire_dataset,
-        total_length=input_size,
-        random_seed=random_seed,
-    )
-
-    training_dataset, validation_dataset = torch.utils.data.random_split(
-        hidden_dataset,
-        [number_training_samples, number_validation_samples],
-    )
-
-    model = TinyBayes(
-        input_size=input_size,
-        hidden_layer_size=hidden_size,
-        output_size=output_size,
-        random_seed=random_seed,
-        normalise_output=False,
-    )
-
-    (model, observer) = train_model(
-        training_dataset=training_dataset,
-        validation_dataset=validation_dataset,
-        model=model,
-        learning_rate=learning_rate,
-        weight_decay=0,
-        epochs=epochs,
-        batch_size=batch_size,
-        loss_function_label="cross-entropy",
-        optimiser_function_label="sgd",
-        progress_bar=True,
-    )
-
-    observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=False)
-
-
-def experiment_accessibility_vafe():
-    """
-    We initialise various Bayesian neural networks and look at how the complexity and
-    variational free energy changes.
-    """
-
-    os.makedirs("experiments/grokking_plain_with_vafe/", exist_ok=True)
-
-    weight_decay = 0
-    learning_rate = 1e-1
-    batch_size = 32
-    input_size = 40
-    output_size = 2
-    k = 3
-    hidden_size = 200
-    epochs = 2000
-    number_training_samples = 1000
     number_validation_samples = 200
     random_seed = 0
 
@@ -3134,7 +3079,6 @@ def experiment_accessibility_vafe():
     observer = Observer(
         observation_settings={
             "variational_free_energy": {},
-            "weights": {"frequency": 10, "layers": [1]},
         },
     )
 
@@ -3143,7 +3087,7 @@ def experiment_accessibility_vafe():
         validation_dataset=validation_dataset,
         model=model,
         learning_rate=learning_rate,
-        weight_decay=weight_decay,
+        weight_decay=0,
         epochs=epochs,
         batch_size=batch_size,
         loss_function_label="cross-entropy",
@@ -3153,6 +3097,470 @@ def experiment_accessibility_vafe():
     )
 
     observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=False)
+
+
+def experiment_grokking_accessibility_vafe():
+    """
+    We look at various random seeds and thus trajectories through the weight space of
+    the network.
+    """
+
+    os.makedirs("experiments/grokking_accessibility_vafe/", exist_ok=True)
+
+    weight_decay = 0
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 30
+    output_size = 2
+    k = 3
+    hidden_size = 200
+    epochs = 500
+    number_training_samples = 600
+    number_validation_samples = 200
+    n_random_seeds = 1
+    every_n_to_check_weights = 10
+
+    random_seed = 0
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=number_training_samples + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [number_training_samples, number_validation_samples],
+    )
+
+    all_vfes = []
+    all_complexities = []
+    all_datafit = []
+    all_training_accuracy = []
+    all_validation_accuracy = []
+
+    for random_seed in range(0, n_random_seeds):
+        model = TinyBayes(
+            input_size=input_size,
+            hidden_layer_size=hidden_size,
+            output_size=output_size,
+            random_seed=random_seed,
+            normalise_output=False,
+        )
+
+        observer = Observer(
+            observation_settings={
+                "variational_free_energy": {},
+                "weights": {"frequency": 10, "layers": [1, 2]},
+            },
+        )
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=0,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+            observer=observer,
+        )
+
+        os.makedirs(
+            f"experiments/grokking_accessibility_vafe/{random_seed}", exist_ok=True
+        )
+
+        all_vfes.append(observer.variational_free_energy)
+        all_complexities.append(observer.complexity_loss)
+        all_datafit.append(observer.error_loss)
+        all_training_accuracy.append(observer.training_accuracy)
+        all_validation_accuracy.append(observer.validation_accuracy)
+
+        layer_1_weights = np.array(observer.weights[1])
+        layer_2_weights = np.array(observer.weights[2])
+
+        # Flatten the weights
+        layer_1_weights = layer_1_weights.reshape(layer_1_weights.shape[0], -1)
+        layer_2_weights = layer_2_weights.reshape(layer_2_weights.shape[0], -1)
+
+        print(layer_1_weights.shape)
+        print(layer_2_weights.shape)
+
+        weight_vector = np.zeros(
+            (
+                layer_2_weights.shape[0],
+                layer_1_weights.shape[1] + layer_2_weights.shape[1],
+            )
+        )
+
+        weight_vector[:, : layer_1_weights.shape[1]] = layer_1_weights
+        weight_vector[:, layer_1_weights.shape[1] :] = layer_2_weights
+
+        if random_seed == 0:
+            all_weights = np.zeros((n_random_seeds * epochs, weight_vector.shape[1]))
+
+        print(weight_vector.shape)
+        print(all_weights.shape)
+
+        all_weights[
+            random_seed * epochs : (random_seed + 1) * epochs, :
+        ] = weight_vector
+
+        observer.plot_me(
+            path=Path(f"experiments/grokking_accessibility_vafe/{random_seed}"),
+            log=False,
+        )
+
+    print(all_weights.shape)
+    print("Completing PCA")
+
+    # Standardize the data
+    scaler = StandardScaler()
+    all_weights_standardized = scaler.fit_transform(all_weights)
+
+    # Apply PCA to get top 20 directions
+    pca = PCA(n_components=20)
+    principalComponents = pca.fit_transform(all_weights_standardized)
+
+    top_20_directions = pca.components_
+
+    # Convert numpy array to a list for JSON serialization
+    top_20_directions_list = top_20_directions.tolist()
+
+    # Save to a JSON file
+    with open(
+        "experiments/grokking_accessibility_vafe/top_20_pca_directions.json", "w"
+    ) as json_file:
+        json.dump(top_20_directions_list, json_file)
+
+    # Save model to a pickle file
+    with open(
+        "experiments/grokking_accessibility_vafe/final_model.pkl", "wb"
+    ) as pickle_file:
+        pickle.dump(model, pickle_file)
+
+    print(f"Finished PCA, saved to top_20_pca_directions.json")
+
+    # Complete PCA on all_weights and save top 20 directions in a JSON
+
+    all_vfes = np.array(all_vfes)
+    all_complexities = np.array(all_complexities)
+    all_datafit = np.array(all_datafit)
+    all_training_accuracy = np.array(all_training_accuracy)
+    all_validation_accuracy = np.array(all_validation_accuracy)
+
+    rescaled_complexities = (all_complexities - np.min(all_complexities)) / (
+        np.max(all_complexities) - np.min(all_complexities)
+    )
+    rescaled_datafit = (all_datafit - np.min(all_datafit)) / (
+        np.max(all_datafit) - np.min(all_datafit)
+    )
+
+    avg_training_accuracy = np.mean(all_training_accuracy, axis=0)
+    std_training_accuracy = np.std(all_training_accuracy, axis=0)
+    avg_validation_accuracy = np.mean(all_validation_accuracy, axis=0)
+    std_validation_accuracy = np.std(all_validation_accuracy, axis=0)
+
+    # Compute average and standard deviation for complexities and data_fit
+    avg_complexities = np.mean(rescaled_complexities, axis=0)
+    std_complexities = np.std(rescaled_complexities, axis=0)
+    avg_datafit = np.mean(rescaled_datafit, axis=0)
+    std_datafit = np.std(rescaled_datafit, axis=0)
+
+    # Create subplots
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    # Plotting Training and Validation Accuracy with std / avg
+    axs[0].fill_between(
+        range(epochs),
+        avg_training_accuracy - std_training_accuracy,
+        avg_training_accuracy + std_training_accuracy,
+        alpha=0.2,
+    )
+    axs[0].fill_between(
+        range(epochs),
+        avg_validation_accuracy - std_validation_accuracy,
+        avg_validation_accuracy + std_validation_accuracy,
+        alpha=0.2,
+    )
+    axs[0].plot(avg_training_accuracy, label="Training Accuracy")
+    axs[0].plot(avg_validation_accuracy, label="Validation Accuracy")
+    axs[0].set_xscale("log")
+    axs[0].set_title("Training and Validation Accuracy")
+    axs[0].legend()
+
+    print(f"Std of complexities are: {std_complexities}")
+    print(f"Std of datafit are: {std_datafit}")
+
+    # Plotting Complexities and Data Fit with std / avg
+    axs[1].fill_between(
+        range(epochs),
+        avg_complexities - std_complexities,
+        avg_complexities + std_complexities,
+        alpha=0.2,
+    )
+    axs[1].fill_between(
+        range(epochs), avg_datafit - std_datafit, avg_datafit + std_datafit, alpha=0.2
+    )
+    axs[1].plot(avg_complexities, label="Normalised Complexity")
+    axs[1].plot(avg_datafit, label="Normalised Data Fit")
+    axs[1].set_xscale("log")
+    axs[1].set_title("Complexity and Data Fit (Normalised)")
+    axs[1].legend()
+
+    # Saving to PDF
+    plt.tight_layout()
+    plt.savefig(
+        "experiments/grokking_accessibility_vafe/results.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
+
+
+def experiment_spheres_around_optimal_solution():
+    """
+    Assumes that experiment grokking_accessibility_vafe has been run and its result
+    is available.
+    """
+
+    experiment_path = Path("experiments/spheres_around_optimal_solution/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    for n_directions in [5, 7, 10, 15, 20]:
+        top_n_directions = n_directions
+        radii = [
+            5e-2,
+            1e-1,
+            1.2e-1,
+            1.5e-1,
+            1.8e-1,
+            2e-1,
+            3e-1,
+            4e-1,
+            5e-1,
+            7e-1,
+            1e0,
+            1.5e0,
+            2e0,
+            2.5e0,
+            3e0,
+        ]
+
+        batch_size = 32
+        input_size = 30
+        k = 3
+        number_training_samples = 600
+        number_validation_samples = 200
+
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        random_seed = 0
+
+        # Load PCA directions
+        try:
+            with open(
+                "experiments/grokking_accessibility_vafe/top_20_pca_directions.json",
+                "r",
+            ) as json_file:
+                top_20_directions = json.load(json_file)
+        except FileNotFoundError:
+            print(
+                "Please run experiment_grokking_accessibility_vafe first to generate the top 20 directions"
+            )
+            return
+
+        # Load the model
+        try:
+            with open(
+                "experiments/grokking_accessibility_vafe/final_model.pkl", "rb"
+            ) as f:
+                model = pickle.load(f)
+        except FileNotFoundError:
+            print(
+                "Please run experiment_grokking_accessibility_vafe first to generate the final model"
+            )
+            return
+
+        loss_function = torch.nn.CrossEntropyLoss()
+
+        random_seed = 0
+
+        entire_dataset = ParityTask(
+            sequence_length=k,
+            num_samples=number_training_samples + number_validation_samples,
+            random_seed=random_seed,
+        )
+
+        hidden_dataset = HiddenDataset(
+            dataset=entire_dataset,
+            total_length=input_size,
+            random_seed=random_seed,
+        )
+
+        training_dataset, validation_dataset = torch.utils.data.random_split(
+            hidden_dataset,
+            [number_training_samples, number_validation_samples],
+        )
+
+        train_loader = torch.utils.data.DataLoader(
+            dataset=training_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=4,
+            pin_memory=True,
+        )
+
+        validation_loader = torch.utils.data.DataLoader(
+            dataset=validation_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=4,
+            pin_memory=True,
+        )
+
+        top_20_directions = np.array(top_20_directions)
+
+        complexity_with_all_radii = []
+        error_with_all_radii = []
+        accuracy_with_all_radii = []
+        validation_accuracy_with_all_radii = []
+
+        original_model = copy.deepcopy(model)
+
+        for radius in radii:
+            complexity_with_radius = []
+            error_with_radius = []
+            accuracy_with_radius = []
+            validation_accuracy_with_radius = []
+
+            for random_seed in tqdm(range(0, 50), desc=f"Sampling for radius {radius}"):
+                model = original_model
+
+                additional_weight = sample_in_subspace(
+                    top_20_directions[:top_n_directions], radius, random_seed
+                )
+
+                # Update the weights of model to be w - radius * top_n_directions
+
+                layer_1_weights = model.layers[0].q_mean.cpu().detach().numpy()
+                layer_2_weights = model.layers[1].q_mean.cpu().detach().numpy()
+
+                layer_1_vector = additional_weight[
+                    : layer_1_weights.shape[0] * layer_1_weights.shape[1]
+                ]
+                layer_2_vector = additional_weight[
+                    layer_1_weights.shape[0] * layer_1_weights.shape[1] :
+                ]
+
+                layer_1_matrix = layer_1_vector.reshape(layer_1_weights.shape)
+                layer_2_matrix = layer_2_vector.reshape(layer_2_weights.shape)
+
+                parameter_for_layer_1 = torch.nn.Parameter(
+                    torch.tensor(
+                        layer_1_weights - layer_1_matrix, dtype=torch.float32
+                    ).to(device)
+                )
+
+                model.layers[0].q_mean = parameter_for_layer_1
+
+                model.layers[1].q_mean = torch.nn.Parameter(
+                    torch.tensor(
+                        layer_2_weights - layer_2_matrix, dtype=torch.float32
+                    ).to(device)
+                )
+
+                number_batches = (
+                    total_vafe
+                ) = (
+                    total_error
+                ) = total_complexity = total_accuracy = total_validation_accuracy = 0
+
+                for batch in train_loader:
+                    inputs = batch[0].contiguous().to(device, non_blocking=False)
+                    targets = batch[1].contiguous().to(device, non_blocking=False)
+
+                    predictions = model(inputs)
+
+                    loss_error = loss_function(predictions, targets)
+                    complexity_loss = model.kl() / len(train_loader.dataset)
+                    loss = loss_error + complexity_loss
+                    # loss = loss_error
+
+                    total_vafe += loss_error.item() + complexity_loss.item()
+                    total_complexity += complexity_loss.item()
+
+                    accuracy = get_accuracy(predictions, targets)
+
+                    total_accuracy += accuracy
+
+                    number_batches += 1
+
+                total_vafe /= number_batches
+                total_complexity /= number_batches
+                total_error = total_vafe - total_complexity
+
+                total_accuracy /= number_batches
+
+                complexity_with_radius.append(total_complexity)
+                error_with_radius.append(total_error)
+                accuracy_with_radius.append(total_accuracy)
+
+                number_batches = 0
+
+                for batch in validation_loader:
+                    inputs = batch[0].contiguous().to(device, non_blocking=False)
+                    targets = batch[1].contiguous().to(device, non_blocking=False)
+
+                    predictions = model(inputs)
+
+                    accuracy = get_accuracy(predictions, targets)
+
+                    total_validation_accuracy += accuracy
+
+                    number_batches += 1
+
+                total_validation_accuracy /= number_batches
+                validation_accuracy_with_radius.append(total_validation_accuracy)
+
+            complexity_with_radius = np.array(complexity_with_radius)
+            error_with_radius = np.array(error_with_radius)
+            accuracy_with_radius = np.array(accuracy_with_radius)
+            validation_accuracy_with_radius = np.array(validation_accuracy_with_radius)
+
+            complexity_with_all_radii.append(complexity_with_radius)
+            error_with_all_radii.append(error_with_radius)
+            accuracy_with_all_radii.append(accuracy_with_radius)
+            validation_accuracy_with_all_radii.append(validation_accuracy_with_radius)
+
+        complexity_with_all_radii = np.array(complexity_with_all_radii)
+        error_with_all_radii = np.array(error_with_all_radii)
+        accuracy_with_all_radii = np.array(accuracy_with_all_radii)
+        validation_accuracy_with_all_radii = np.array(
+            validation_accuracy_with_all_radii
+        )
+
+        plot_combined_relationship(
+            radii,
+            [
+                complexity_with_all_radii,
+                error_with_all_radii,
+                accuracy_with_all_radii,
+                validation_accuracy_with_all_radii,
+            ],
+            ["Complexity", "Error", "Accuracy", "Validation Accuracy"],
+            "Metrics with different radii",
+            experiment_path / Path(f"combined_metrics_{n_directions}.pdf"),
+        )
 
 
 if __name__ == "__main__":

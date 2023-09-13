@@ -56,6 +56,10 @@ class Observer:
                 layers = setting["layers"]
                 for layer in layers:
                     self.weights[layer] = []
+            elif observation == "variational_free_energy":
+                self.variational_free_energy = []
+                self.complexity_loss = []
+                self.error_loss = []
 
     def record_training_loss(self, loss: float) -> None:
         self.training_losses.append(loss)
@@ -178,6 +182,19 @@ class Observer:
             log=log,
         )
 
+        # --- Variational Free Energy information --- #
+
+        if "variational_free_energy" in self.observation_settings:
+            plot_list_of_lines_and_labels(
+                [
+                    (self.variational_free_energy, "Variational Free Energy"),
+                    (self.complexity_loss, "Complexity Loss"),
+                    (self.error_loss, "Error Loss"),
+                ],
+                path=path / Path("variational_free_energy" + file_extension),
+                log=log,
+            )
+
 
 def train_model(
     training_dataset: Dataset,
@@ -233,6 +250,10 @@ def train_model(
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
     ):
         total_loss = total_accuracy = number_batches = 0
+
+        if vafe:
+            total_vafe = 0
+            total_complexity = 0
 
         if rate_limit is not None:
             for layer, frequency in rate_limit:

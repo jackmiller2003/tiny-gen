@@ -427,3 +427,68 @@ def get_rows_for_dataset(final_array, dataset_index, random_seeds):
     start_index = dataset_index * rows_per_dataset
     end_index = start_index + rows_per_dataset
     return final_array[start_index:end_index]
+
+
+def sample_in_subspace(n_directions, radius, random_seed=0):
+    """
+    Sample in the subspace spanned by the first n_directions PCA directions.
+    """
+
+    np.random.seed(random_seed)
+
+    adjustment = np.zeros_like(n_directions[0])
+
+    scale_factors = np.random.uniform(-1, 1, len(n_directions))
+    scale_factors = (scale_factors / np.linalg.norm(scale_factors)) * radius
+
+    # Create the adjustment vector by scaling and summing the PCA directions.
+    for i, direction in enumerate(n_directions):
+        adjustment += scale_factors[i] * direction
+
+    return adjustment
+
+
+def rescale_data(data):
+    """
+    Rescale the data to range between 0 and 1.
+    :param data: The dataset to be rescaled.
+    :return: Rescaled dataset.
+    """
+    min_val = np.min(data)
+    max_val = np.max(data)
+    return (data - min_val) / (max_val - min_val)
+
+
+def plot_combined_relationship(radii, data_series, ylabels, title, filename):
+    """
+    Plot multiple relationships on the same graph.
+
+    :param radii: X-axis values.
+    :param data_series: List of datasets to be plotted.
+    :param ylabels: List of labels for each dataset.
+    :param title: Title of the plot.
+    :param filename: Path where the plot should be saved.
+    """
+    plt.figure(figsize=(12, 8))
+    markers = ["o", "s", "^", "d"]
+
+    for idx, data in enumerate(data_series):
+        data = rescale_data(data)
+
+        means = data.mean(axis=1)
+        stds = data.std(axis=1)
+
+        plt.plot(radii, means, marker=markers[idx], label=f"Mean of {ylabels[idx]}")
+        plt.fill_between(radii, means - stds, means + stds, alpha=0.2)
+
+    plt.xlabel("Radius")
+    plt.ylabel("Value")
+    plt.title(title)
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.legend()
+    plt.xscale("log")  # Using a log scale for radii for better visualization
+    # plt.yscale("log")
+    plt.tight_layout()
+
+    plt.savefig(filename, bbox_inches="tight")
+    plt.close()
