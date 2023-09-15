@@ -113,7 +113,7 @@ class VariationalLinearLayer(VariationalLayer):
 
 
 class GaussianLayer(nn.Module):
-    def __init__(self, size, prior_mean=0.0, prior_std=1.0):
+    def __init__(self, size, prior_mean=0.0, prior_std=1.0, q_mean_std=0.1):
         super().__init__()
         self.size = S = torch.Size(size)
         self.use_cuda = use_cuda = torch.cuda.is_available()
@@ -127,7 +127,7 @@ class GaussianLayer(nn.Module):
         self.prior_dist = Independent(Normal(loc=prior_mean, scale=prior_std), 2)
 
         # variational parameters
-        self.q_mean = nn.Parameter(torch.Tensor(S).normal_(0.0, 0.1))
+        self.q_mean = nn.Parameter(torch.Tensor(S).normal_(0.0, q_mean_std))
         self.q_log_std = nn.Parameter(torch.log(torch.Tensor([0.01])) * torch.ones(S))
 
     def get_post_params(self):
@@ -145,7 +145,7 @@ class GaussianLayer(nn.Module):
 
 
 class GaussianLinear(VariationalLinearLayer, GaussianLayer):
-    def __init__(self, size, prior_mean=0.0, prior_std=1.0, bias=True):
+    def __init__(self, size, prior_mean=0.0, prior_std=1.0, bias=True, q_mean_std=0.1):
         VariationalLinearLayer.__init__(self)
         din = size[0]
         dout = size[1]
@@ -153,7 +153,7 @@ class GaussianLinear(VariationalLinearLayer, GaussianLayer):
             din = din + 1
         sizeb = [din, dout]
         self.bias = bias
-        GaussianLayer.__init__(self, sizeb, prior_mean, prior_std)
+        GaussianLayer.__init__(self, sizeb, prior_mean, prior_std, q_mean_std)
 
 
 class GaussianConv2d(VariationalConv2dLayer, GaussianLayer):
@@ -165,7 +165,7 @@ class GaussianConv2d(VariationalConv2dLayer, GaussianLayer):
         stride=1,
         padding=0,
         prior_mean=0.0,
-        prior_std=1.0
+        prior_std=1.0,
     ):
         VariationalConv2dLayer.__init__(self)
         if isinstance(kernel_size, int):

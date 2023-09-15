@@ -242,7 +242,11 @@ def train_model(
     vafe = False
 
     if "variational_free_energy" in observer.observation_settings.keys():
+        print(f"Using VAFE strategy.")
         vafe = True
+
+    if vafe:
+        assert optimiser.param_groups[0]["weight_decay"] == 0
 
     for epoch in tqdm(
         range(epochs),

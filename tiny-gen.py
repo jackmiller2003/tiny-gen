@@ -1452,7 +1452,7 @@ def experiment_grokking_via_concealment():
     batch_size = 32
     p = 7
     hidden_size = 1000
-    epochs = 300
+    epochs = 500
     number_training_samples = 600
     number_validation_samples = 200
 
@@ -1463,10 +1463,10 @@ def experiment_grokking_via_concealment():
     datasets_to_test = [
         ModuloAdditionTask,
         ModuloSubtractionTask,
-        # ModuloDivisionTask,
-        # PolynomialTask,
-        # PolynomialTaskTwo,
-        # ModuloMultiplicationDoubleXTask,
+        ModuloDivisionTask,
+        PolynomialTask,
+        PolynomialTaskTwo,
+        ModuloMultiplicationDoubleXTask,
     ]
 
     random_seeds = list(range(0, 3))
@@ -1475,7 +1475,9 @@ def experiment_grokking_via_concealment():
         (len(additional_lengths), len(random_seeds), len(datasets_to_test))
     )
 
-    for i, additional_length in enumerate(additional_lengths):
+    for i, additional_length in tqdm(
+        enumerate(additional_lengths), desc="Additional length"
+    ):
         print(f"Working on additional length: {additional_length}")
         all_dataset_grokking_for_k = []
 
@@ -1615,7 +1617,7 @@ def experiment_grokking_via_concealment():
     )  # Generate smoother x values for curve
     y = b * np.exp(a * x)  # Calculate y-values for the exponential model
     plt.plot(
-        x, y, "-", color="black", label="Exponential Fit"
+        x, y, "-", color="black", label="Regression Fit"
     )  # 'r-' specifies a red line
 
     for i, dataset_name in enumerate(dataset_names):
@@ -1671,6 +1673,7 @@ def experiment_grokking_via_concealment():
 
     plt.xlabel("Additional Length")
     plt.ylabel("Grokking Gap")
+    plt.yscale("log")
     plt.legend(loc="best")
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
     plt.tight_layout()
@@ -2020,20 +2023,34 @@ def experiment_grokking_plain_gp_classification_toy():
     plt.figure()
 
     # Plot the averaged VFE with the shaded area for standard deviation
-    plt.plot(epoch_range, avg_vfes, "-k", label="Variational Free Energy (VFE)")
+    plt.plot(epoch_range, avg_data_fit, "-r", label="Train Data Fit")
     plt.fill_between(
-        epoch_range, avg_vfes - std_vfes, avg_vfes + std_vfes, color="k", alpha=0.3
+        epoch_range,
+        avg_data_fit - std_data_fit,
+        avg_data_fit + std_data_fit,
+        color="r",
+        alpha=0.3,
+    )
+
+    plt.plot(epoch_range, avg_complexities, "-b", label="Train Complexity")
+    plt.fill_between(
+        epoch_range,
+        avg_complexities - std_complexities,
+        avg_complexities + std_complexities,
+        color="b",
+        alpha=0.3,
     )
 
     # Configure plot
     plt.xlabel("Epoch")
-    plt.ylabel("Variational Free Energy")
+    plt.ylabel("Objective Value")
     plt.xscale("log")
-    plt.legend(loc="lower right")
+    plt.legend(loc="upper right")
 
     # Save the plot
     plt.savefig(
-        path_of_experiment / Path("gpc_toy_vfe_averaged.pdf"), bbox_inches="tight"
+        path_of_experiment / Path("gpc_toy_complexity_and_data_fit.pdf"),
+        bbox_inches="tight",
     )
 
     # Create a figure for Log Probabilities
@@ -2098,27 +2115,27 @@ def experiment_grokking_plain_gp_classification_toy():
     axes[0].legend(loc="lower right")
 
     # Second subplot for complexity
-    axes[1].plot(epoch_range, avg_complexities, "-r", label="Train Complexity")
+    axes[1].plot(epoch_range, avg_train_lps, "-r", label="Train Log Probabilities")
     axes[1].fill_between(
         epoch_range,
-        avg_complexities - std_complexities,
-        avg_complexities + std_complexities,
+        avg_train_lps - std_train_lps,
+        avg_train_lps + std_train_lps,
         color="r",
         alpha=0.3,
     )
 
-    axes[1].plot(epoch_range, avg_data_fit, "-b", label="Negative Train Data Fit")
+    axes[1].plot(epoch_range, avg_valid_lps, "-b", label="Validation Log Probabilities")
     axes[1].fill_between(
         epoch_range,
-        avg_data_fit - std_data_fit,
-        avg_data_fit + std_data_fit,
+        avg_valid_lps - std_valid_lps,
+        avg_valid_lps + std_valid_lps,
         color="b",
         alpha=0.3,
     )
     axes[1].set_xscale("log")
     axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Objective")
-    axes[1].legend(loc="upper right")
+    axes[1].set_ylabel("Objective Value")
+    axes[1].legend(loc="upper left")
 
     # Adjust space between subplots
     plt.tight_layout()
@@ -2558,27 +2575,29 @@ def experiment_parity_gp_classification_batch():
     axes[0].set_ylabel("Accuracy")
     axes[0].legend(loc="lower right")
 
-    # Second subplot for log probabilities
-    axes[1].plot(epoch_range, avg_complexities, "-r", label="Complexities")
+    axes[1].plot(epoch_range, avg_train_lps, "-r", label="Train Log Probabilities")
     axes[1].fill_between(
         epoch_range,
-        avg_complexities - std_complexities,
-        avg_complexities + std_complexities,
+        avg_train_lps - std_train_lps,
+        avg_train_lps + std_train_lps,
         color="r",
         alpha=0.3,
     )
-    axes[1].plot(epoch_range, avg_data_fit, "-b", label="Negative Data Fit")
+
+    axes[1].plot(epoch_range, avg_valid_lps, "-b", label="Validation Log Probabilities")
+
     axes[1].fill_between(
         epoch_range,
-        avg_data_fit - std_data_fit,
-        avg_data_fit + std_data_fit,
+        avg_valid_lps - std_valid_lps,
+        avg_valid_lps + std_valid_lps,
         color="b",
         alpha=0.3,
     )
+
     axes[1].set_xscale("log")
     axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Log Probabilities")
-    axes[1].legend(loc="upper right")
+    axes[1].set_ylabel("Objective Value")
+    axes[1].legend(loc="upper left")
 
     # Adjust space between subplots
     plt.tight_layout()
@@ -2587,6 +2606,33 @@ def experiment_parity_gp_classification_batch():
     plt.savefig(
         path_of_experiment / Path("gp_parity.pdf"),
         bbox_inches="tight",
+    )
+
+    plt.figure()
+
+    plt.plot(epoch_range, avg_complexities, "-r", label="Complexities")
+    plt.fill_between(
+        epoch_range,
+        avg_complexities - std_complexities,
+        avg_complexities + std_complexities,
+        color="r",
+        alpha=0.3,
+    )
+    plt.plot(epoch_range, avg_data_fit, "-b", label="Negative Data Fit")
+    plt.fill_between(
+        epoch_range,
+        avg_data_fit - std_data_fit,
+        avg_data_fit + std_data_fit,
+        color="b",
+        alpha=0.3,
+    )
+    plt.xscale("log")
+    plt.xlabel("Epoch")
+    plt.ylabel("Objective Value")
+    plt.legend(loc="upper right")
+
+    plt.savefig(
+        path_of_experiment / Path("gp_parity_complexity_and_data_fit.pdf"),
     )
 
 
@@ -2815,7 +2861,12 @@ def experiment_grokking_lr_classification():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     epochs = 5000
 
-    all_train_accs, all_valid_accs, all_train_complexity = ([], [], [])
+    all_train_accs, all_valid_accs, all_train_complexity, all_train_fit = (
+        [],
+        [],
+        [],
+        [],
+    )
 
     for random_seed in tqdm(range(0, 5)):
         torch.manual_seed(random_seed)
@@ -2896,10 +2947,12 @@ def experiment_grokking_lr_classification():
         all_train_accs.append(train_acc)
         all_valid_accs.append(val_acc)
         all_train_complexity.append(training_reg)
+        all_train_fit.append(training_fit)
 
     all_train_accs = np.array(all_train_accs)
     all_valid_accs = np.array(all_valid_accs)
     all_train_complexity = np.array(all_train_complexity)
+    all_train_fit = np.array(all_train_fit)
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
         axis=0
@@ -2912,6 +2965,11 @@ def experiment_grokking_lr_classification():
     avg_train_complexity, std_train_complexity = (
         all_train_complexity.mean(axis=0),
         all_train_complexity.std(axis=0),
+    )
+
+    avg_train_fit, std_train_fit = (
+        all_train_fit.mean(axis=0),
+        all_train_fit.std(axis=0),
     )
 
     epoch_range = range(1, epochs + 1)
@@ -2940,18 +2998,28 @@ def experiment_grokking_lr_classification():
     axes[0].set_ylabel("Accuracy")
     axes[0].legend(loc="lower right")
 
-    # Second subplot for log probabilities
-    axes[1].plot(epoch_range, avg_train_complexity, "-r", label="Train Complexity")
+    axes[1].plot(epoch_range, avg_train_fit, "-r", label="Data Fit")
+    axes[1].fill_between(
+        epoch_range,
+        np.maximum(avg_train_fit - std_train_fit, 1e-3),
+        avg_train_fit + std_train_fit,
+        color="r",
+        alpha=0.3,
+    )
+
+    axes[1].plot(epoch_range, avg_train_complexity, "-b", label="Train Complexity")
     axes[1].fill_between(
         epoch_range,
         avg_train_complexity - std_train_complexity,
         avg_train_complexity + std_train_complexity,
-        color="r",
+        color="b",
         alpha=0.3,
     )
+
     axes[1].set_xscale("log")
+    axes[1].set_yscale("log")
     axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Train Complexity")
+    axes[1].set_ylabel("Objective Value")
     axes[1].legend(loc="upper right")
 
     # Adjust space between subplots
@@ -3114,7 +3182,7 @@ def experiment_grokking_accessibility_vafe():
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 500
+    epochs = 1000
     number_training_samples = 600
     number_validation_samples = 200
     n_random_seeds = 1
@@ -3152,6 +3220,7 @@ def experiment_grokking_accessibility_vafe():
             output_size=output_size,
             random_seed=random_seed,
             normalise_output=False,
+            std_of_init=5,
         )
 
         observer = Observer(

@@ -132,6 +132,7 @@ class TinyBayes(nn.Module):
         hidden_layer_size: int,
         output_size: int,
         random_seed: int,
+        std_of_init: float = 0.1,
         normalise_output: bool = False,
         verbose: bool = True,
     ):
@@ -140,6 +141,8 @@ class TinyBayes(nn.Module):
         np.random.seed(random_seed)
         random.seed(random_seed)
 
+        self.std_of_init = std_of_init
+
         super(TinyBayes, self).__init__()
 
         self.input_size = input_size
@@ -147,8 +150,8 @@ class TinyBayes(nn.Module):
         self.output_size = output_size
         self.normalise_output = normalise_output
 
-        fc1 = GaussianLinear([self.input_size, self.hidden_layer_size])
-        fc2 = GaussianLinear([self.hidden_layer_size, self.output_size])
+        fc1 = GaussianLinear([self.input_size, self.hidden_layer_size], q_mean_std=std_of_init)
+        fc2 = GaussianLinear([self.hidden_layer_size, self.output_size], q_mean_std=std_of_init)
         self.layers = nn.ModuleList()
         self.layers.append(fc1)
         self.layers.append(fc2)
@@ -186,13 +189,16 @@ class TinyBayes(nn.Module):
         """
 
         if layer == 1:
-            if mean: return self.layers[0].q_mean.cpu().detach().numpy()
-            else: return self.layers[0].weight_sample()[0].cpu().detach().numpy()
-            
-            
+            if mean:
+                return self.layers[0].q_mean.cpu().detach().numpy()
+            else:
+                return self.layers[0].weight_sample()[0].cpu().detach().numpy()
+
         elif layer == 2:
-            if mean: return self.layers[1].q_mean.cpu().detach().numpy()
-            else: return self.layers[1].weight_sample()[0].cpu().detach().numpy()
+            if mean:
+                return self.layers[1].q_mean.cpu().detach().numpy()
+            else:
+                return self.layers[1].weight_sample()[0].cpu().detach().numpy()
         else:
             raise ValueError("Invalid layer.")
 
