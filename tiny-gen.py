@@ -33,6 +33,11 @@ from src.train import train_model, Observer
 from src.plot import (
     plot_validation_and_accuracy_from_observers,
 )
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import pickle
+from tqdm import tqdm
 
 
 def experiment_grokking_plain(args):
@@ -1336,12 +1341,12 @@ def experiment_grokking_plain_with_vafe(args):
     weight_decay = 0
     learning_rate = 1e-1
     batch_size = 32
-    input_size = 30
+    input_size = 40
     output_size = 2
     k = 3
     hidden_size = 200
-    epochs = 500
-    number_training_samples = 600
+    epochs = 650
+    number_training_samples = 1000
     number_validation_samples = 200
     random_seed = 0
 
@@ -1368,6 +1373,11 @@ def experiment_grokking_plain_with_vafe(args):
         output_size=output_size,
         random_seed=random_seed,
         normalise_output=False,
+        q_mean_std=0.1,
+    )
+
+    observer = Observer(
+        observation_settings={"variational_free_energy": {}},
     )
 
     (model, observer) = train_model(
@@ -1381,9 +1391,319 @@ def experiment_grokking_plain_with_vafe(args):
         loss_function_label="cross-entropy",
         optimiser_function_label="sgd",
         progress_bar=True,
+        observer=observer,
     )
 
-    observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=False)
+    observer.plot_me(path=Path("experiments/grokking_plain_with_vafe/"), log=True)
+
+
+def experiment_complexity_error_bnn_grokking(args):
+    """
+    In this experiment we aim to produce a graph where on one axis there is complexity and the other there is error. Then we plot various trajectories and cover them based on the amount of grokking.
+    """
+
+    os.makedirs("experiments/complexity_error_bnn_grokking/", exist_ok=True)
+
+    weight_decay = 0
+    learning_rate = 1e-1
+    batch_size = 32
+    input_size = 30
+    output_size = 2
+    k = 3
+    hidden_size = 200
+    epochs = 1500
+    number_training_samples = 1000
+    number_validation_samples = 200
+    random_seed = 0
+
+    threshold = 0.95
+
+    datafit_list = []
+    complexity_list = []
+    grokking_gap_list = []
+    training_accuracies = []
+    validation_accuracies = []
+    complexities_to_grok = []
+    training_errors_to_grok = []
+
+    variances = [5e-3, 1e-2, 5e-2, 1e-1, 3e-1, 5e-1, 7e-1, 1e0]
+
+    for variance in tqdm(variances):
+        cache_file = (
+            f"experiments/complexity_error_bnn_grokking/results_{variance}_{epochs}.pkl"
+        )
+
+        # Check if results for the current variance exist in cache
+        if os.path.exists(cache_file):
+            with open(cache_file, "rb") as f:
+                cached_results = pickle.load(f)
+            datafit = np.array(cached_results["datafit"])
+            complexity = np.array(cached_results["complexity"])
+
+            training_accuracy = np.array(cached_results["training_accuracy"])
+            validation_accuracy = np.array(cached_results["validation_accuracy"])
+
+        else:
+            entire_dataset = ParityTask(
+                sequence_length=k,
+                num_samples=number_training_samples + number_validation_samples,
+                random_seed=random_seed,
+            )
+
+            hidden_dataset = HiddenDataset(
+                dataset=entire_dataset,
+                total_length=input_size,
+                random_seed=random_seed,
+            )
+
+            training_dataset, validation_dataset = torch.utils.data.random_split(
+                hidden_dataset,
+                [number_training_samples, number_validation_samples],
+            )
+
+            model = TinyBayes(
+                input_size=input_size,
+                hidden_layer_size=hidden_size,
+                output_size=output_size,
+                random_seed=random_seed,
+                normalise_output=False,
+                q_mean_std=variance,
+            )
+
+            observer = Observer(
+                observation_settings={"variational_free_energy": {}},
+            )
+
+            (model, observer) = train_model(
+                training_dataset=training_dataset,
+                validation_dataset=validation_dataset,
+                model=model,
+                learning_rate=learning_rate,
+                weight_decay=weight_decay,
+                epochs=epochs,
+                batch_size=batch_size,
+                loss_function_label="cross-entropy",
+                optimiser_function_label="sgd",
+                progress_bar=True,
+                observer=observer,
+            )
+
+            training_accuracy = np.array(observer.training_accuracy)
+            validation_accuracy = np.array(observer.validation_accuracy)
+
+            datafit = np.array(observer.error_loss)
+            complexity = np.array(observer.complexity_loss)
+
+        print(f"Training accuracy for variance {variance}: {training_accuracy}")
+        print(f"Validation accuracy for variance {variance}: {validation_accuracy}")
+
+        # Find the point where training accuracy is above threshold
+        training_indices_above_95 = np.where(training_accuracy > threshold)[0]
+        if training_indices_above_95.size > 0:
+            training_accuracy_above_95 = training_indices_above_95[0]
+        else:
+            training_accuracy_above_95 = (
+                epochs  # Set to total number of epochs if never exceeds threshold
+            )
+
+        validation_indices_above_95 = np.where(validation_accuracy > threshold)[0]
+        if validation_indices_above_95.size > 0:
+            validation_accuracy_above_95 = validation_indices_above_95[0]
+        else:
+            validation_accuracy_above_95 = (
+                epochs  # Set to total number of epochs if never exceeds threshold
+            )
+
+        print(f"Validation accuracy 95: {validation_accuracy_above_95}")
+
+        grokking_gap = validation_accuracy_above_95 - training_accuracy_above_95
+
+        print(f"Grokking gap for variance {variance}: {grokking_gap}")
+
+        if validation_accuracy_above_95 != epochs:
+            complexities_to_grok.append(complexity[validation_accuracy_above_95])
+            training_errors_to_grok.append(datafit[validation_accuracy_above_95])
+
+        # Store the values in lists
+        datafit_list.append(datafit)
+        complexity_list.append(complexity)
+        grokking_gap_list.append(grokking_gap)
+
+        results_to_cache = {
+            "datafit": datafit,
+            "complexity": complexity,
+            "grokking_gap": grokking_gap,
+            "training_accuracy": training_accuracy,
+            "validation_accuracy": validation_accuracy,
+        }
+
+        with open(cache_file, "wb") as f:
+            pickle.dump(results_to_cache, f)
+
+    if complexities_to_grok != []:
+        print(f"Complexities to grok: {complexities_to_grok}")
+
+        average_complexity_to_grok = np.mean(complexities_to_grok)
+        print(f"Average complexity to grok: {average_complexity_to_grok}")
+
+    if training_errors_to_grok != []:
+        print(f"Training errors to grok: {training_errors_to_grok}")
+
+        average_training_error_to_grok = np.mean(training_errors_to_grok)
+        print(f"Average training error to grok: {average_training_error_to_grok}")
+
+    print(f"Grokking gap list: {grokking_gap_list}")
+
+    # After the loop ends, plot the values
+    # Create a new figure with a width of 12 units and height of 5 units
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+
+    normalized_grokking_gap = [
+        (gap - min(grokking_gap_list))
+        / (max(grokking_gap_list) - min(grokking_gap_list))
+        for gap in grokking_gap_list
+    ]
+
+    print(f"Normalised grokking gap: {normalized_grokking_gap}")
+
+    cmap = cm.coolwarm
+
+    # Define max and min alpha values
+    max_alpha = 1.0
+    min_alpha = 0.3
+
+    for i in range(3, len(datafit_list)):
+        if complexities_to_grok != []:
+            print(
+                f"Grokking point is: {training_errors_to_grok[i]}, {complexities_to_grok[i]}"
+            )
+
+            if i == 3:
+                label = "Grokking Point"
+
+                plt.plot(
+                    10000,
+                    10000,
+                    "^",
+                    color="black",
+                    markersize=10,
+                    label=label,
+                    alpha=1.0,
+                    markerfacecolor="white",
+                    markeredgecolor="black",
+                    zorder=100000,
+                )
+            else:
+                label = ""
+
+            plt.plot(
+                training_errors_to_grok[i],
+                complexities_to_grok[i],
+                "^",
+                color="black",
+                markersize=10,
+                label="",
+                alpha=1.0,
+                markerfacecolor=cmap(normalized_grokking_gap[i]),
+                markeredgecolor="black",
+                zorder=100000,
+            )
+
+        num_points = len(datafit_list[i])
+        for j in range(num_points):
+            alpha_max = 1.0
+            alpha_min = 0.2
+            k = -np.log(0.1 / 0.9) / 100
+
+            alpha_val = alpha_min + (alpha_max - alpha_min) * np.exp(-k * j)
+
+            plt.plot(
+                datafit_list[i][j],
+                complexity_list[i][j],
+                "o",
+                label=f"$\sigma_{i-3} = {variances[i]}$" if j == 0 else "",
+                color=cmap(normalized_grokking_gap[i]),
+                linewidth=3.5,
+                alpha=alpha_val,  # Set alpha based on the logarithmic index within the sublist
+            )
+        # Connect points with a line, without changing alpha for lines
+        # plt.plot(datafit_list[i], complexity_list[i], "-", color=cmap(normalized_grokking_gap[i]), linewidth=3.5)
+
+        # Plot the location of the point where the model groks
+
+    # plt.axhline(
+    #     y=average_complexity_to_grok,
+    #     color="black",
+    #     linestyle="--",
+    #     label="Complextiy to Grok",
+    # )
+
+    # plt.axvline(
+    #     x=average_training_error_to_grok,
+    #     color="black",
+    #     linestyle="--",
+    #     label="Error to Grok",
+    # )
+
+    plt.xlabel("Error")
+    plt.ylabel("Complexity")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.ylim([10, 3.2e1])
+    plt.xlim([5e-3, 30])
+    plt.title("Error and Complexity")
+    plt.legend()
+
+    # Link the colorbar to the normalized colormap
+    sm = cm.ScalarMappable(cmap=cmap)
+    sm.set_array([])
+    plt.colorbar(sm, label="Normalised Grokking Gap")
+
+    # Second subplot: the new figure
+    plt.subplot(1, 2, 2)
+
+    average_datafit = np.mean(datafit_list, axis=0)
+    average_complexity = np.mean(complexity_list, axis=0)
+
+    std_datafit = np.std(datafit_list, axis=0)
+    std_complexity = np.std(complexity_list, axis=0)
+
+    plt.plot(average_datafit, label="Average Error")
+    plt.plot(average_complexity, label="Average Complexity")
+    plt.fill_between(
+        range(len(average_datafit)),
+        average_datafit - std_datafit,
+        average_datafit + std_datafit,
+        alpha=0.3,
+    )
+    plt.fill_between(
+        range(len(average_complexity)),
+        average_complexity - std_complexity,
+        average_complexity + std_complexity,
+        alpha=0.3,
+    )
+
+    plt.axhline(
+        y=average_complexity_to_grok,
+        color="black",
+        linestyle="--",
+        label="Average Complextiy Required to Grok",
+    )
+
+    plt.xlabel("Epochs")
+    plt.xscale("log")
+    plt.ylabel("Value")
+    plt.title("Average Error and Complexity")
+    plt.legend()
+
+    # Save the combined figure
+    plt.tight_layout()  # This will ensure that the subplots do not overlap
+    plt.savefig(
+        f"experiments/complexity_error_bnn_grokking/combined_figure_{epochs}.pdf",
+        bbox_inches="tight",
+    )
 
 
 if __name__ == "__main__":

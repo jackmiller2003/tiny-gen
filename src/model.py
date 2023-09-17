@@ -11,7 +11,6 @@ import os
 
 os.sys.path.append("..")
 
-import external.vinn.vinn as vinn
 from src.vbnn_layers import GaussianLinear
 
 
@@ -129,12 +128,13 @@ class TinyBayes(nn.Module):
         random_seed: int,
         normalise_output: bool = False,
         verbose: bool = True,
+        q_mean_std: float = 0.1,
     ):
         # Sets all random seeds
         torch.manual_seed(random_seed)
         np.random.seed(random_seed)
         random.seed(random_seed)
-        
+
         super(TinyBayes, self).__init__()
 
         self.input_size = input_size
@@ -142,8 +142,8 @@ class TinyBayes(nn.Module):
         self.output_size = output_size
         self.normalise_output = normalise_output
 
-        fc1 = GaussianLinear([self.input_size, self.hidden_layer_size])
-        fc2 = GaussianLinear([self.hidden_layer_size, self.output_size])
+        fc1 = GaussianLinear([self.input_size, self.hidden_layer_size], q_mean_std=q_mean_std)
+        fc2 = GaussianLinear([self.hidden_layer_size, self.output_size], q_mean_std=q_mean_std)
         self.layers = nn.ModuleList()
         self.layers.append(fc1)
         self.layers.append(fc2)

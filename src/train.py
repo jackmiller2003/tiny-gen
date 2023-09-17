@@ -274,7 +274,7 @@ def train_model(
             else:
                 loss = loss_function(predictions, targets)
 
-            total_loss += loss.item() # TODO: should this be loss_error.item()
+            total_loss += loss.item()  # TODO: should this be loss_error.item()
             accuracy = get_accuracy(predictions, targets)
 
             total_accuracy += accuracy
@@ -306,6 +306,7 @@ def train_model(
                 total_val_loss += float(validation_loss.item())
                 number_val_batches += 1
                 total_val_accuracy += get_accuracy(predictions, targets)
+
         observer.record_validation_loss(total_val_loss / number_val_batches)
         observer.record_validation_accuracy(total_val_accuracy / number_val_batches)
 
