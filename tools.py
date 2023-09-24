@@ -101,6 +101,9 @@ def plot_landsacpes_of_GP_model(
         all_train_mses = []
         all_val_mses = []
 
+        max_training_mse = 0
+        min_training_mse = 1000000
+
         for init_idx, (ll_i, ls_i) in tqdm(enumerate(zip(init_ll, init_ls))):
             likelihood = copy.deepcopy(likelihood_init)
             model = copy.deepcopy(model_init)
@@ -169,6 +172,12 @@ def plot_landsacpes_of_GP_model(
                 lmls.append(loss.detach().cpu())
                 fits.append(fit.detach().cpu())
                 comps.append(comp.detach().cpu())
+
+                if train_loss > max_training_mse:
+                    max_training_mse = train_loss
+
+                if train_loss < min_training_mse:
+                    min_training_mse = train_loss
 
                 # if i in epochs_ls:
                 #     lengthscales.append(
@@ -319,6 +328,7 @@ def plot_landsacpes_of_GP_model(
             axs[1][init_idx].set_xlabel("Epoch")
             axs[1][init_idx].set_ylabel("Mean squared error")
             axs[1][init_idx].set_title(f"MSE for initialisation {chr(65 + init_idx)}")
+            axs[1][init_idx].set_ylim([min_training_mse - 0.05, max_training_mse + 0.1])
             if init_idx == 0:
                 axs[1][init_idx].legend()
 
