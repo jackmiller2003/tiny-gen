@@ -22,8 +22,9 @@ def load_from_cache(filename):
 
 # Modular Functions
 def prepare_data(args, random_seed):
+    validation_samples = 200
     entire_dataset = ParityTask(
-        sequence_length=args.k_factor_range,
+        sequence_length=3,  
         num_samples=args.num_samples,
         random_seed=random_seed,
     )
@@ -34,7 +35,7 @@ def prepare_data(args, random_seed):
     )
     return torch.utils.data.random_split(
         hidden_dataset,
-        [args.num_samples - args.validation_samples, args.validation_samples],
+        [args.num_samples - validation_samples, validation_samples],
     )
 
 def train_and_evaluate_model(args, training_dataset, validation_dataset, variance, random_seed):
@@ -55,8 +56,8 @@ def train_and_evaluate_model(args, training_dataset, validation_dataset, varianc
         weight_decay=args.weight_decay,
         epochs=args.epochs,
         batch_size=args.batch_size,
-        loss_function_label=args.loss_function_label,
-        optimiser_function_label=args.optimiser_label,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
         progress_bar=True,
         observer=observer,
     )
@@ -69,10 +70,8 @@ def calculate_grokking_metrics(training_accuracy, validation_accuracy, threshold
     return validation_accuracy_above_thresh - training_accuracy_above_thresh
 
 def plot_results(args, datafit_list, complexity_list, grokking_gap_list):
-    # Create a new figure with a width of 12 units and height of 6 units
     plt.figure(figsize=(12, 6))
     
-    # First subplot: Error and Complexity
     plt.subplot(1, 2, 1)
 
     normalized_grokking_gap = [
@@ -83,17 +82,18 @@ def plot_results(args, datafit_list, complexity_list, grokking_gap_list):
 
     cmap = cm.coolwarm
 
-    for i, (datafit, complexity) in enumerate(zip(datafit_list, complexity_list)):
-        alpha_max = 1.0
-        alpha_min = 0.2
-        k = -np.log(0.1 / 0.9) / 100
-
-        num_points = len(datafit)
+    for i in range(len(datafit_list)):
+        num_points = len(datafit_list[i])
         for j in range(num_points):
+            alpha_max = 1.0
+            alpha_min = 0.2
+            k = -np.log(0.1 / 0.9) / 100
+
             alpha_val = alpha_min + (alpha_max - alpha_min) * np.exp(-k * j)
+
             plt.plot(
-                datafit[j],
-                complexity[j],
+                datafit_list[i][j],
+                complexity_list[i][j],
                 "o",
                 label=f"$\sigma_{i} = {args.variances[i]}$" if j == 0 else "",
                 color=cmap(normalized_grokking_gap[i]),
@@ -105,6 +105,8 @@ def plot_results(args, datafit_list, complexity_list, grokking_gap_list):
     plt.ylabel("Complexity")
     plt.xscale("log")
     plt.yscale("log")
+    plt.ylim([0.1, 1])
+    plt.xlim([0.1, 1])
     plt.title("Error and Complexity")
     plt.legend()
 
@@ -112,7 +114,6 @@ def plot_results(args, datafit_list, complexity_list, grokking_gap_list):
     sm.set_array([])
     plt.colorbar(sm, label="Normalized Grokking Gap")
 
-    # Second subplot: Average Error and Complexity
     plt.subplot(1, 2, 2)
 
     average_datafit = np.mean(datafit_list, axis=0)
@@ -142,42 +143,162 @@ def plot_results(args, datafit_list, complexity_list, grokking_gap_list):
     plt.title("Average Error and Complexity")
     plt.legend()
 
-    # Save the combined figure
     plt.tight_layout()
-    plt.savefig(
-        f"experiments/{args.experiment_name}/combined_figure_{args.epochs}.pdf",
-        bbox_inches="tight",
-    )
+    plt.savefig(f"experiments/{args.experiment_name}/combined_figure_{args.epochs}.pdf", bbox_inches="tight")
 
 def main(args):
     os.makedirs(f"experiments/{args.experiment_name}/", exist_ok=True)
-    random_seed = 0
-    threshold = 0.95
+    random_seed = 0  # Initialize random seed
+    threshold = 0.95  # Initialize threshold for grokking
 
-    training_dataset, validation_dataset = prepare_data(args, random_seed)
-    datafit_list, complexity_list, grokking_gap_list = [], [], []
+    num_runs = 3  # Number of runs per variance
 
-    for variance in tqdm(args.variances):
-        cache_file = f"experiments/{args.experiment_name}/results_{variance}_{args.epochs}.pkl"
-        if os.path.exists(cache_file):
-            cached_results = load_from_cache(cache_file)
-        else:
-            model, observer = train_and_evaluate_model(args, training_dataset, validation_dataset, variance, random_seed)
-            cached_results = {
-                "datafit": np.array(observer.error_loss),
-                "complexity": np.array(observer.complexity_loss),
-                "grokking_gap": calculate_grokking_metrics(np.array(observer.training_accuracy), np.array(observer.validation_accuracy), threshold, args.epochs)
-            }
-            save_to_cache(cached_results, cache_file)
+    # Initialize lists to store the results
+    datafit_list_runs = []
+    complexity_list_runs = []
+    grokking_gap_list_runs = []
 
-        datafit_list.append(cached_results["datafit"])
-        complexity_list.append(cached_results["complexity"])
-        grokking_gap_list.append(cached_results["grokking_gap"])
+    for run in tqdm(range(num_runs), desc="Total runs"):
+        # Re-initialize per-run lists
+        datafit_list = []
+        complexity_list = []
+        grokking_gap_list = []
 
-    plot_results(args, datafit_list, complexity_list, grokking_gap_list)
+        training_dataset, validation_dataset = prepare_data(args, random_seed + run)
+
+        for variance in tqdm(args.variances):
+            cache_file = f"experiments/{args.experiment_name}/results_run{run}_{variance}_{args.epochs}.pkl"
+
+            if os.path.exists(cache_file):
+                print(f"Loading cached results from {cache_file}")
+                cached_results = load_from_cache(cache_file)
+            else:
+                print(f"Couldn't find cached {cache_file}, training from scratch")
+                model, observer = train_and_evaluate_model(
+                    args, training_dataset, validation_dataset, variance, random_seed + run
+                )
+                grokking_gap = calculate_grokking_metrics(np.array(observer.training_accuracy), 
+                                                          np.array(observer.validation_accuracy), 
+                                                          threshold, args.epochs)
+                cached_results = {
+                    "datafit": np.array(observer.error_loss),
+                    "complexity": np.array(observer.complexity_loss),
+                    "grokking_gap": grokking_gap,
+                    "training_accuracy": observer.training_accuracy,
+                    "validation_accuracy": observer.validation_accuracy,
+                }
+                save_to_cache(cached_results, cache_file)
+
+            datafit_list.append(cached_results["datafit"])
+            complexity_list.append(cached_results["complexity"])
+            grokking_gap_list.append(cached_results["grokking_gap"])
+
+        # Append per-run lists to the overall lists
+        datafit_list_runs.append(datafit_list)
+        complexity_list_runs.append(complexity_list)
+        grokking_gap_list_runs.append(grokking_gap_list)
+
+    # Average the runs
+    avg_datafit_list = np.mean(datafit_list_runs, axis=0)
+    avg_complexity_list = np.mean(complexity_list_runs, axis=0)
+    avg_grokking_gap_list = np.mean(grokking_gap_list_runs, axis=0)
+
+    plot_results(args, avg_datafit_list, avg_complexity_list, avg_grokking_gap_list)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
-    # Populate argparse arguments here
+    argparser.add_argument(
+        "--num_samples",
+        type=int,
+        default=1000,
+        help="Number of samples to generate for the dataset",
+    )
+
+    argparser.add_argument(
+        "--sequence_length",
+        type=int,
+        default=30,
+        help="Length of the sequences to generate",
+    )
+
+    argparser.add_argument(
+        "--k_factor_range",
+        type=int,
+        nargs=2,
+        default=[1, 3],
+        help="Range of k factors to use before generalisation",
+    )
+
+    argparser.add_argument(
+        "--generalisation_k_factor",
+        type=int,
+        nargs=2,
+        default=[4, 4],
+    )
+
+    argparser.add_argument(
+        "--max_k_factor",
+        type=int,
+        default=20,
+        help="Maximum k factor to use for one-hot encoding",
+    )
+
+    argparser.add_argument(
+        "--hidden_layer_size",
+        type=int,
+        default=200,
+        help="Size of the hidden layer in the network",
+    )
+
+    argparser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=1e-1,
+        help="Learning rate for the network",
+    )
+
+    argparser.add_argument(
+        "--weight_decay", type=float, default=0, help="Weight decay for the network"
+    )
+
+    argparser.add_argument(
+        "--epochs", type=int, default=1500, help="Number of epochs to train for"
+    )
+
+    argparser.add_argument(
+        "--batch_size", type=int, default=4096, help="Batch size for training"
+    )
+
+    argparser.add_argument(
+        "--loss_function_label", type=str, default="hinge", help="Loss function to use"
+    )
+
+    argparser.add_argument(
+        "--optimiser_label", type=str, default="sgd", help="Optimiser to use"
+    )
+
+    argparser.add_argument(
+        "--plot_loss", type=bool, default=True, help="Whether to plot the loss"
+    )
+
+    argparser.add_argument(
+        "--plot_accuracy", type=bool, default=True, help="Whether to plot the accuracy"
+    )
+
+    argparser.add_argument(
+        "--experiment_name",
+        type=str,
+        default="complexity_error_bnn_grokking",
+        help="Name of the experiment",
+    )
+
+    argparser.add_argument(
+        "--variances",
+        type=float,
+        nargs='+',
+        default=[5e-3, 1e-2, 5e-2, 1e-1, 3e-1, 5e-1, 7e-1, 1e0],
+        help="List of variances to use for the model",
+    )
+
     args = argparser.parse_args()
     main(args)

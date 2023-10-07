@@ -4,6 +4,6 @@ jobs
 experiments/0b
 weights
 __pycache__
-experiments
+# experiments
 external/*
 tmp/*

@@ -1414,7 +1414,7 @@ def experiment_complexity_error_bnn_grokking(args):
     epochs = 1500
     number_training_samples = 1000
     number_validation_samples = 200
-    random_seed = 0
+    random_seed = 2
 
     threshold = 0.95
 
@@ -1430,7 +1430,7 @@ def experiment_complexity_error_bnn_grokking(args):
 
     for variance in tqdm(variances):
         cache_file = (
-            f"experiments/complexity_error_bnn_grokking/results_{variance}_{epochs}.pkl"
+            f"experiments/complexity_error_bnn_grokking/results_{variance}_{epochs}_seed{random_seed}.pkl"
         )
 
         # Check if results for the current variance exist in cache
@@ -1701,7 +1701,7 @@ def experiment_complexity_error_bnn_grokking(args):
     # Save the combined figure
     plt.tight_layout()  # This will ensure that the subplots do not overlap
     plt.savefig(
-        f"experiments/complexity_error_bnn_grokking/combined_figure_{epochs}.pdf",
+        f"experiments/complexity_error_bnn_grokking/combined_figure_{epochs}_seed{random_seed}.pdf",
         bbox_inches="tight",
     )
 
@@ -1788,7 +1788,7 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--experiments", type=str, nargs="+", default=[], help="Experiments to run"
+        "--experiments", type=str, nargs="+", default=["complexity_error_bnn_grokking"], help="Experiments to run"
     )
 
     args = argparser.parse_args()
