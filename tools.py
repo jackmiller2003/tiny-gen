@@ -9,6 +9,7 @@ import copy
 import numpy as np
 from src.train import setup_optimiser_and_loss
 import matplotlib.gridspec as gridspec
+import matplotlib
 
 
 def plot_landsacpes_of_GP_model(
@@ -28,6 +29,15 @@ def plot_landsacpes_of_GP_model(
     """
     Plots the marginal likelihood landscape, datafit landscape and complexity landscape.
     """
+
+    font = {
+        "family": "normal",
+        # 'weight' : 'bold',
+        "size": 14,
+    }
+
+    matplotlib.rc("font", **font)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     train_inputs = torch.tensor(
@@ -218,13 +228,13 @@ def plot_landsacpes_of_GP_model(
             plt.plot(
                 ls_path[-1], ll_path[-1], "*", markersize=10, color=colors[init_idx]
             )
-            plt.title("Trajectories through marginal likelihood landscape")
+            plt.title("Marginal Likelihood Landscape")
             plt.savefig(
                 path_to_plot / Path("gpr_marginal_likelihood_landscape_trajectory.pdf")
             )
 
             plt.figure(2)
-            plt.title("Trajectories through data fit landscape")
+            plt.title("Data Fit Landscape")
             plt.plot(ls_path, ll_path, color="k")
             plt.plot(ls_path[0], ll_path[0], "s", markersize=10, color=colors[init_idx])
             plt.plot(
@@ -233,7 +243,7 @@ def plot_landsacpes_of_GP_model(
             plt.savefig(path_to_plot / Path("gpr_data_fit_landscape_trajectory.pdf"))
 
             plt.figure(3)
-            plt.title("Trajectories through complexity landscape")
+            plt.title("Complexity Landscape")
             plt.plot(ls_path, ll_path, color="k")
             plt.plot(ls_path[0], ll_path[0], "s", markersize=10, color=colors[init_idx])
             plt.plot(
@@ -242,8 +252,8 @@ def plot_landsacpes_of_GP_model(
             plt.savefig(path_to_plot / Path("gpr_complexity_landscape_trajectory.pdf"))
 
             plt.figure()
-            plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="train")
-            plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="validation")
+            plt.plot(np.arange(epochs) + 1, train_mses, "-r", label="Train")
+            plt.plot(np.arange(epochs) + 1, valid_mses, "-b", label="Validation")
             plt.xscale("log")
             plt.xlabel("epoch")
             plt.ylabel("mse")
@@ -326,8 +336,8 @@ def plot_landsacpes_of_GP_model(
             )
             axs[1][init_idx].set_xscale("log")
             axs[1][init_idx].set_xlabel("Epoch")
-            axs[1][init_idx].set_ylabel("Mean squared error")
-            axs[1][init_idx].set_title(f"MSE for initialisation {chr(65 + init_idx)}")
+            axs[1][init_idx].set_ylabel("MSE")
+            axs[1][init_idx].set_title(f"MSE for Initialisation {chr(65 + init_idx)}")
             axs[1][init_idx].set_ylim([min_training_mse - 0.05, max_training_mse + 0.1])
             if init_idx == 0:
                 axs[1][init_idx].legend()
@@ -335,24 +345,24 @@ def plot_landsacpes_of_GP_model(
         # Marginal likelihood landscape
         c1 = axs[0][0].pcolor(ln, ll, ml, cmap="RdBu")
         fig.colorbar(c1, cax=caxs[0], orientation="horizontal")
-        axs[0][0].set_xlabel("log outputscale")
-        axs[0][0].set_ylabel("log lengthscale")
+        axs[0][0].set_xlabel("Log Outputscale")
+        axs[0][0].set_ylabel("Log Lengthscale")
         axs[0][0].plot(ls_path, ll_path, color="k")
-        axs[0][0].set_title("Trajectories through marginal likelihood landscape")
+        axs[0][0].set_title("Marginal Likelihood Landscape")
 
         # Data fit landscape
         c2 = axs[0][1].pcolor(ln, ll, fit_terms, cmap="RdBu")
         fig.colorbar(c2, cax=caxs[1], orientation="horizontal")
-        axs[0][1].set_xlabel("log outputscale")
-        axs[0][1].set_ylabel("log lengthscale")
-        axs[0][1].set_title("Trajectories through data fit landscape")
+        axs[0][1].set_xlabel("Log Outputscale")
+        axs[0][1].set_ylabel("Log Lengthscale")
+        axs[0][1].set_title("Data Fit Landscape")
 
         # Complexity landscape
         c3 = axs[0][2].pcolor(ln, ll, complexity_terms, cmap="RdBu")
         fig.colorbar(c3, cax=caxs[2], orientation="horizontal")
-        axs[0][2].set_xlabel("log outputscale")
-        axs[0][2].set_ylabel("log lengthscale")
-        axs[0][2].set_title("Trajectories through complexity landscape")
+        axs[0][2].set_xlabel("Log Outputscale")
+        axs[0][2].set_ylabel("Log Lengthscale")
+        axs[0][2].set_title("Complexity Landscape")
 
         # Save the combined figure
         plt.tight_layout()  # Adjust the spacing between subplots for better appearance

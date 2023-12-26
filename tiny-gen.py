@@ -70,6 +70,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import pickle
 import copy
+from matplotlib.transforms import Affine2D
+import matplotlib
 
 
 def experiment_grokking_plain():
@@ -1438,8 +1440,16 @@ def experiment_grokking_via_concealment():
     In this experiment we wish to show that concealment is an effective strategy for inducing grokking.
     """
 
+    font = {
+        "family": "normal",
+        # 'weight' : 'bold',
+        "size": 14,
+    }
+
+    matplotlib.rc("font", **font)
+
     os.makedirs("experiments/grokking_via_concealment/", exist_ok=True)
-    cache_file = "experiments/grokking_via_concealment/cache.json"
+    cache_file = "experiments/grokking_via_concealment/cache_w_40_removed.json"
 
     if os.path.exists(cache_file):
         with open(cache_file) as f:
@@ -1452,7 +1462,7 @@ def experiment_grokking_via_concealment():
     batch_size = 32
     p = 7
     hidden_size = 1000
-    epochs = 500
+    epochs = 1500
     number_training_samples = 600
     number_validation_samples = 200
 
@@ -1608,7 +1618,7 @@ def experiment_grokking_via_concealment():
     print(f"Exponential coefficients: a={a}, b={b}\n\n")
 
     # Plot the results
-    plt.figure(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))  # plt.figure()
 
     dataset_names = [dataset.__name__ for dataset in datasets_to_test]
 
@@ -1645,13 +1655,21 @@ def experiment_grokking_via_concealment():
         print(f"Average values: {avg_values}")
         print(f"Std values: {std_values}")
 
+        trans1 = Affine2D().translate(-0.15 * i * (-1) ** i, 0.0) + ax.transData
+
+        if dataset_name == "PolynomialTaskTwo":
+            new_name = "PolynomialTwo"
+        else:
+            new_name = dataset_name[:-4]
+
         plt.errorbar(
-            additional_lengths,
-            avg_values,
-            yerr=std_values,
+            additional_lengths[1:],
+            avg_values[1:],
+            yerr=std_values[1:],
             fmt="o",
-            label=dataset_name,
+            label=new_name,
             capsize=5,
+            transform=trans1,
         )
 
         ln_y = np.where(
@@ -1679,7 +1697,7 @@ def experiment_grokking_via_concealment():
     plt.tight_layout()
 
     plt.savefig(
-        "experiments/grokking_via_concealment/grokking_vs_length.pdf",
+        "experiments/grokking_via_concealment/grokking_vs_length_40.pdf",
         bbox_inches="tight",
     )
 
@@ -1855,6 +1873,8 @@ def experiment_grokking_plain_gp_classification_toy():
         [],
     )
 
+    n_runs = 5
+
     for random_seed in tqdm([42, 52, 62, 72, 82]):
         torch.manual_seed(random_seed)
         np.random.seed(random_seed)
@@ -1982,18 +2002,24 @@ def experiment_grokking_plain_gp_classification_toy():
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
         axis=0
-    )
+    ) / np.sqrt(n_runs)
     avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
         axis=0
-    )
-    avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(axis=0)
-    avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(axis=0)
+    ) / np.sqrt(n_runs)
+    avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(
+        axis=0
+    ) / np.sqrt(n_runs)
+    avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(
+        axis=0
+    ) / np.sqrt(n_runs)
     avg_complexities, std_complexities = (
         all_complexities.mean(axis=0),
-        all_complexities.std(axis=0),
+        all_complexities.std(axis=0) / np.sqrt(n_runs),
     )
-    avg_data_fit, std_data_fit = all_data_fit.mean(axis=0), all_data_fit.std(axis=0)
-    avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0)
+    avg_data_fit, std_data_fit = all_data_fit.mean(axis=0), all_data_fit.std(
+        axis=0
+    ) / np.sqrt(n_runs)
+    avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0) / np.sqrt(n_runs)
 
     epoch_range = range(1, epochs + 1)
     plt.figure()
@@ -2088,6 +2114,14 @@ def experiment_grokking_plain_gp_classification_toy():
     )
 
     plt.figure()
+
+    font = {
+        "family": "normal",
+        # 'weight' : 'bold',
+        "size": 14,
+    }
+
+    matplotlib.rc("font", **font)
 
     # Set up a subplot grid with 1 row and 2 columns, and double the width of the individual plots
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -2332,6 +2366,8 @@ def experiment_parity_gp_classification_batch():
         [],
     )
 
+    n_runs = 5
+
     for random_seed in tqdm([42, 52, 62, 72, 82]):
         torch.manual_seed(random_seed)
         np.random.seed(random_seed)
@@ -2456,18 +2492,24 @@ def experiment_parity_gp_classification_batch():
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
         axis=0
-    )
+    ) / np.sqrt(n_runs)
     avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
         axis=0
-    )
-    avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(axis=0)
-    avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(axis=0)
+    ) / np.sqrt(n_runs)
+    avg_train_lps, std_train_lps = all_train_lps.mean(axis=0), all_train_lps.std(
+        axis=0
+    ) / np.sqrt(n_runs)
+    avg_valid_lps, std_valid_lps = all_valid_lps.mean(axis=0), all_valid_lps.std(
+        axis=0
+    ) / np.sqrt(n_runs)
     avg_complexities, std_complexities = (
         all_complexities.mean(axis=0),
-        all_complexities.std(axis=0),
+        all_complexities.std(axis=0) / np.sqrt(n_runs),
     )
-    avg_data_fit, std_data_fit = all_data_fit.mean(axis=0), all_data_fit.std(axis=0)
-    avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0)
+    avg_data_fit, std_data_fit = all_data_fit.mean(axis=0), all_data_fit.std(
+        axis=0
+    ) / np.sqrt(n_runs)
+    avg_vfes, std_vfes = all_vfes.mean(axis=0), all_vfes.std(axis=0) / np.sqrt(n_runs)
 
     epoch_range = range(1, epochs + 1)
     plt.figure()
@@ -2550,11 +2592,19 @@ def experiment_parity_gp_classification_batch():
 
     plt.figure()
 
+    font = {
+        "family": "normal",
+        # 'weight' : 'bold',
+        "size": 14,
+    }
+
+    matplotlib.rc("font", **font)
+
     # Set up a subplot grid with 1 row and 2 columns, and double the width of the individual plots
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
     # First subplot for accuracies
-    axes[0].plot(epoch_range, avg_train_accs, "-r", label="Train Accuracy")
+    axes[0].plot(epoch_range, avg_train_accs, "-r", label="Train Acc.")
     axes[0].fill_between(
         epoch_range,
         avg_train_accs - std_train_accs,
@@ -2562,7 +2612,7 @@ def experiment_parity_gp_classification_batch():
         color="r",
         alpha=0.3,
     )
-    axes[0].plot(epoch_range, avg_valid_accs, "-b", label="Validation Accuracy")
+    axes[0].plot(epoch_range, avg_valid_accs, "-b", label="Val. Acc.")
     axes[0].fill_between(
         epoch_range,
         avg_valid_accs - std_valid_accs,
@@ -2868,7 +2918,9 @@ def experiment_grokking_lr_classification():
         [],
     )
 
-    for random_seed in tqdm(range(0, 5)):
+    n_runs = 5
+
+    for random_seed in tqdm(range(0, n_runs)):
         torch.manual_seed(random_seed)
         np.random.seed(random_seed)
 
@@ -2956,21 +3008,29 @@ def experiment_grokking_lr_classification():
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
         axis=0
-    )
+    ) / np.sqrt(n_runs)
 
     avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
         axis=0
-    )
+    ) / np.sqrt(n_runs)
 
     avg_train_complexity, std_train_complexity = (
         all_train_complexity.mean(axis=0),
-        all_train_complexity.std(axis=0),
+        all_train_complexity.std(axis=0) / np.sqrt(n_runs),
     )
 
     avg_train_fit, std_train_fit = (
         all_train_fit.mean(axis=0),
-        all_train_fit.std(axis=0),
+        all_train_fit.std(axis=0) / np.sqrt(n_runs),
     )
+
+    font = {
+        "family": "normal",
+        # 'weight' : 'bold',
+        "size": 14,
+    }
+
+    matplotlib.rc("font", **font)
 
     epoch_range = range(1, epochs + 1)
     # Set up a subplot grid with 1 row and 2 columns, and double the width of the individual plots
@@ -3001,7 +3061,7 @@ def experiment_grokking_lr_classification():
     axes[1].plot(epoch_range, avg_train_fit, "-r", label="Data Fit")
     axes[1].fill_between(
         epoch_range,
-        np.maximum(avg_train_fit - std_train_fit, 1e-3),
+        avg_train_fit - std_train_fit,
         avg_train_fit + std_train_fit,
         color="r",
         alpha=0.3,
@@ -3030,6 +3090,196 @@ def experiment_grokking_lr_classification():
         path_of_experiment / Path("grokking_classification_combined.pdf"),
         bbox_inches="tight",
     )
+
+
+def experiment_grokking_lr_init_analysis():
+    """
+    Can we induce grokking on linear regression?
+    """
+
+    path_of_experiment = Path("experiments/grokking_lr_init_analysis")
+
+    os.makedirs(path_of_experiment, exist_ok=True)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    epochs = 5000
+
+    # Initialisation weights for x_0 comapred to x_1,x_2,x_3
+
+    init_weights_for_x0 = list(np.logspace(-2.2, 0, 12, base=10))
+
+    magnitude_of_gap = 3e2
+
+    grokking_gaps_across_inits = []
+    complexity_gap_across_inits = []
+    train_fit_across_inits = []
+
+    for init_weight in init_weights_for_x0:
+
+
+        all_train_accs, all_valid_accs, all_train_complexity, all_train_fit = (
+            [],
+            [],
+            [],
+            [],
+        )
+
+        n_runs = 5
+
+        for random_seed in tqdm(range(0, n_runs)):
+            torch.manual_seed(random_seed)
+            np.random.seed(random_seed)
+
+            # we generate some data
+            x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+            y = 0.3 * x
+            y = y.to(torch.float)
+            y = y.squeeze()
+            n_train = 2
+
+            x = add_features_for_lr_classification(x)
+
+            # split for train / validation
+            x_train, y_train = x[:n_train, :].to(device), y[:n_train].to(device)
+            x_valid, y_valid = x[n_train:, :].to(device), y[n_train:].to(device)
+
+            # Extend a bit for visualization purposes
+            x_plot = torch.linspace(-1, 1, 500).view(-1, 1)
+            x_plot = add_features_for_lr_classification(x_plot)
+
+            x_plot = x_plot.to(device)
+
+            # we create a linear regression model
+            input_size = x_train.shape[1]
+            output_size = 1
+
+            model = TinyLinearModel(input_size, output_size, random_seed)
+
+            # change the init to induce grokking, we want to start in high complexity region
+            model.fc1.weight.data = torch.tensor([[float(init_weight), float(1-init_weight), float(1-init_weight), float(1-init_weight)]]).to(device)
+
+            # move model to device
+            model = model.to(device)
+
+            optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=0)
+            train_acc = []
+            val_acc = []
+            training_fit = []
+            valid_fit = []
+            training_total_loss = []
+            training_reg = []
+
+            for epoch in range(epochs):
+                optimiser.zero_grad()
+                output = model(x_train)
+                data_fit = gaussian_loss(output.squeeze(), y_train) / n_train
+                l2_term = l2_norm_for_lr(model, device) / n_train
+                total_loss = data_fit + l2_term
+                total_loss.backward()
+                optimiser.step()
+
+                training_reg.append(l2_term.item())
+                training_fit.append(data_fit.item())
+                training_total_loss.append(total_loss.item())
+
+                val_outputs = model(x_valid)
+                valid_data_fit = (
+                    gaussian_loss(val_outputs.squeeze(), y_valid) / x_valid.shape[0]
+                )
+                valid_fit.append(valid_data_fit.item())
+
+                train_acc.append(accuracy_for_negative_positive(output.squeeze(), y_train))
+                val_acc.append(
+                    accuracy_for_negative_positive(val_outputs.squeeze(), y_valid)
+                )
+
+            all_train_accs.append(train_acc)
+            all_valid_accs.append(val_acc)
+            all_train_complexity.append(training_reg)
+            all_train_fit.append(training_fit)
+
+        all_train_accs = np.array(all_train_accs)
+        all_valid_accs = np.array(all_valid_accs)
+        all_train_complexity = np.array(all_train_complexity)
+        all_train_fit = np.array(all_train_fit)
+
+        avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
+            axis=0
+        ) / np.sqrt(n_runs)
+
+        avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
+            axis=0
+        ) / np.sqrt(n_runs)
+
+        # Get the average grokking gap. I.e. the difference between the point tran_accs reaches 95% and valid_accs reaches 95%
+
+        gap_threshold = 0.95
+        train_grokking_point = epochs
+        valid_grokking_point = epochs
+
+        for i in range(len(avg_train_accs)):
+            if avg_train_accs[i] > gap_threshold:
+                train_grokking_point = i
+                break
+        
+        for i in range(len(avg_valid_accs)):
+            if avg_valid_accs[i] > gap_threshold:
+                valid_grokking_point = i
+                break
+
+        avg_train_complexity, std_train_complexity = (
+            all_train_complexity.mean(axis=0),
+            all_train_complexity.std(axis=0) / np.sqrt(n_runs),
+        )
+
+        avg_train_fit, std_train_fit = (
+            all_train_fit.mean(axis=0),
+            all_train_fit.std(axis=0) / np.sqrt(n_runs),
+        )
+
+        complexity_at_train_grok = avg_train_complexity[train_grokking_point]
+        complexity_at_valid_grok = avg_train_complexity[valid_grokking_point]
+
+        train_fit_at_train_grok = avg_train_fit[train_grokking_point]
+        train_fit_at_valid_grok = avg_train_fit[valid_grokking_point]
+
+        grokking_gap_max = max(valid_grokking_point - train_grokking_point, 0)
+
+        grokking_gaps_across_inits.append((grokking_gap_max)/magnitude_of_gap)
+        complexity_gap_across_inits.append(complexity_at_train_grok - complexity_at_valid_grok)
+        train_fit_across_inits.append(train_fit_at_train_grok - train_fit_at_valid_grok)
+
+    # Create a subplot with two side by side
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
+
+    font = {
+            "family": "normal",
+            # 'weight' : 'bold',
+            "size": 14,
+        }
+
+    matplotlib.rc("font", **font)
+
+    axes[0].scatter(init_weights_for_x0, grokking_gaps_across_inits, label=f"Grokking Gap ({format(magnitude_of_gap, '.2e')})")
+    axes[0].plot(init_weights_for_x0, grokking_gaps_across_inits, color="blue")
+
+    axes[0].scatter(init_weights_for_x0, complexity_gap_across_inits, label="Complexity Gap")
+    axes[0].plot(init_weights_for_x0, complexity_gap_across_inits, color="red")
+
+    axes[1].scatter(init_weights_for_x0, train_fit_across_inits, label="Train Fit Gap")
+    axes[1].plot(init_weights_for_x0, train_fit_across_inits, color="green")
+
+    axes[0].set_xscale("log")
+    axes[0].set_xlabel("Initialisation Weight of First Component")
+    axes[0].set_ylabel("Gaps")
+    axes[0].set_ylim(-0.1,2.5)
+    axes[0].legend()
+
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("Initialisation Weight of First Component")
+    axes[1].set_ylim(-0.1,2.5)
+    axes[1].legend()
+
+    plt.savefig(path_of_experiment / Path("grokking_lr_init_analysis.pdf"), bbox_inches="tight")
 
 
 def experiment_training_with_vafe():
