@@ -3463,7 +3463,7 @@ def experiment_grokking_lr_weight_analysis():
 
         # Get the average grokking gap. I.e. the difference between the point tran_accs reaches 95% and valid_accs reaches 95%
 
-        gap_threshold = 0.95 # TODO: this is currently different to other.
+        gap_threshold = 0.95
         train_grokking_point = epochs - 1
         valid_grokking_point = epochs - 1
 
