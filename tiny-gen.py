@@ -1684,6 +1684,323 @@ def experiment_grokking_via_concealment():
     )
 
 
+def experiment_grokking_via_concealment_with_initialisation():
+    """
+    In this experiment we wish to examine how the grokking concealment strategy is impacted
+    by the initialisation of the weights. We will do this by varying the weight norm and
+    seeing how the grokking gap changes.
+    """
+
+    os.makedirs("experiments/grokking_via_concealment_with_initialisation/", exist_ok=True)
+    cache_file = "experiments/grokking_via_concealment_with_initialisation/cache.json"
+
+    if os.path.exists(cache_file):
+        with open(cache_file) as f:
+            cache = json.load(f)
+    else:
+        cache = {}
+
+    weight_decay = 1e-2
+    learning_rate = 5e-2
+    batch_size = 32
+    p = 7
+    hidden_size = 1000
+    epochs = 750
+    number_training_samples = 600
+    number_validation_samples = 200
+
+    threshold = 0.95
+
+    additional_lengths = [0, 10, 20, 30, 40]
+
+    initialisations = [1e-4, 1e-3, 5e-2, 1e-1, 5e-1, 1]
+
+    datasets_to_test = [
+        ModuloAdditionTask,
+        ModuloSubtractionTask,
+        ModuloDivisionTask,
+        PolynomialTask,
+        PolynomialTaskTwo,
+        ModuloMultiplicationDoubleXTask,
+        ParityTask
+    ]
+
+    random_seeds = list(range(0, 3))
+
+    array_of_gaps = np.zeros(
+        (len(additional_lengths), len(random_seeds), len(datasets_to_test), len(initialisations))
+    )
+
+    for i, additional_length in tqdm(
+        enumerate(additional_lengths), desc="Additional length"
+    ):
+        print(f"Working on additional length: {additional_length}")
+        all_dataset_grokking_for_k = []
+
+        for j, random_seed in enumerate(random_seeds):
+            print(f"Working on random seed: {random_seed}")
+            accuracies = []
+
+            datasets = []
+
+            for dataset in datasets_to_test:
+                if dataset.__name__ != "ParityTask":                
+                    datasets.append(
+                        dataset(
+                            num_samples=number_training_samples + number_validation_samples,
+                            random_seed=random_seed,
+                            modulo=p,
+                        )
+                    )
+                else:
+                    datasets.append(
+                        dataset(
+                            sequence_length=3,
+                            num_samples=number_training_samples + number_validation_samples,
+                            random_seed=random_seed,
+                        )
+                    )
+
+            for k, dataset in enumerate(datasets):
+                
+                for l, initialisation in enumerate(initialisations):
+                    found_key = False
+
+                    cache_name = f"{additional_length}_{random_seed}_{dataset.__name__()}_{initialisation}"
+
+                    try:
+                        cache[cache_name]
+                        found_key = True
+                    except KeyError:
+                        pass
+
+                    if found_key:
+                        training_accuracy = cache[cache_name]["training_accuracy"]
+                        validation_accuracy = cache[cache_name]["validation_accuracy"]
+
+                    else:
+                        hidden_dataset = HiddenDataset(
+                            dataset=dataset,
+                            total_length=2 * p + additional_length,
+                            random_seed=random_seed,
+                        )
+
+                        (
+                            hidden_training_dataset,
+                            hidden_validation_dataset,
+                        ) = torch.utils.data.random_split(
+                            hidden_dataset,
+                            [number_training_samples, number_validation_samples],
+                        )
+
+                        model_hidden = TinyModel(
+                            input_size=2 * p + additional_length,
+                            hidden_layer_size=hidden_size,
+                            output_size=p,
+                            random_seed=random_seed,
+                        )
+
+                        # Change all model_hidden weights by the initialisation
+
+                        for param in model_hidden.parameters():
+                            param.data *= initialisation
+
+                        (model_hidden, observer_hidden) = train_model(
+                            training_dataset=hidden_training_dataset,
+                            validation_dataset=hidden_validation_dataset,
+                            model=model_hidden,
+                            learning_rate=learning_rate,
+                            weight_decay=weight_decay,
+                            epochs=epochs,
+                            batch_size=batch_size,
+                            loss_function_label="cross-entropy",
+                            optimiser_function_label="sgd",
+                            progress_bar=True,
+                        )
+
+                        training_accuracy = np.array(observer_hidden.training_accuracy)
+                        validation_accuracy = np.array(observer_hidden.validation_accuracy)
+
+                        cache[cache_name] = {
+                            "training_accuracy": observer_hidden.training_accuracy,
+                            "validation_accuracy": observer_hidden.validation_accuracy,
+                        }
+
+                    training_indices = np.where(np.array(training_accuracy) > threshold)
+
+                    if training_indices[0].size > 0:
+                        index_of_train = training_indices[0][0]
+                    else:
+                        index_of_train = epochs
+
+                    validation_indices = np.where(np.array(validation_accuracy) > threshold)
+
+                    if validation_indices[0].size > 0:
+                        index_of_val = validation_indices[0][0]
+                    else:
+                        index_of_val = epochs
+
+                    print(f"Index of train: {index_of_train}")
+                    print(f"Index of val: {index_of_val}")
+
+                    array_of_gaps[i, j, k, l] = index_of_val - index_of_train
+
+                with open(cache_file, "w") as f:
+                    json.dump(cache, f)
+
+    print(f"Array of gaps: {array_of_gaps}")
+
+    # Place the initialisation axis first and shift everything over by one
+    array_of_gaps = np.moveaxis(array_of_gaps, 3, 0)
+
+    ln_y_for_init, coefficients_for_init, array_of_gaps_for_init = [], [], []
+
+    for index_of_init, array_associated_with_init in enumerate(array_of_gaps):
+        array_of_gaps_for_init.append(array_associated_with_init)
+        
+        flattened_gaps = array_associated_with_init.reshape(
+            len(additional_lengths) * len(random_seeds) * len(datasets_to_test)
+        )
+
+        repeated_lengths = np.repeat(
+            additional_lengths, len(random_seeds) * len(datasets_to_test)
+        )
+
+        coordinate_array = np.column_stack((repeated_lengths, flattened_gaps))
+
+        print(f"Flattened gaps: {flattened_gaps}")
+        print(f"Coordinate array: {coordinate_array}")
+
+        ln_y = np.where(coordinate_array[:, 1] <= 0, 0, np.log(coordinate_array[:, 1]))
+
+        # Perform linear fit
+        coefficients = np.polyfit(coordinate_array[:, 0], ln_y, 1)
+
+        ln_y_for_init.append(ln_y)
+        coefficients_for_init.append(coefficients)
+
+        # Extract exponential model parameters a and b
+        a = coefficients[0]
+        b = np.exp(coefficients[1])
+
+        correlation_coefficient, p_value = pearsonr(coordinate_array[:, 0], ln_y)
+
+        print(f"Total trend... for init {initialisations[index_of_init]}: {array_associated_with_init[0, 0]}")
+        print(f"Correlation coefficient: {correlation_coefficient}")
+        print(f"p-value: {p_value}")
+        print(f"Exponential coefficients: a={a}, b={b}\n\n")
+
+    # Plot the results
+    plt.figure(figsize=(10, 6))
+
+    # Choose color set from matplotlib
+    colors_for_init = plt.cm.Set1(np.linspace(0, 1, len(initialisations)))
+
+    # Create a dictionary with dataset name and a given color
+
+    dataset_names = [dataset.__name__ for dataset in datasets_to_test]
+
+    colormap = plt.cm.get_cmap('viridis', len(dataset_names)) 
+    colors = [colormap(i) for i in range(colormap.N)]
+
+    # Create a dictionary mapping dataset names to colors
+    dict_of_colors = {name: color for name, color in zip(dataset_names, colors)}
+
+    for init_index, init in enumerate(initialisations):
+        
+        print(f"Plotting init: {init}")
+
+        coefficients = coefficients_for_init[init_index]
+
+        a = coefficients[0]
+        b = np.exp(coefficients[1])
+
+        x = np.linspace(
+            min(coordinate_array[:, 0]), max(coordinate_array[:, 0]), 500
+        )  # Generate smoother x values for curve
+        y = b * np.exp(a * x)  # Calculate y-values for the exponential model
+        plt.plot(
+            x, y, "-", color=colors_for_init[init_index], label=f"Initialisation: {init}"
+        )  # 'r-' specifies a red line
+
+        for i, dataset_name in enumerate(dataset_names):
+            # Filter final_array to get rows related to the current dataset
+            grokking_gaps_for_dataset = array_of_gaps_for_init[init_index][:, :, i]
+
+            # Flatten like before
+
+            grokking_gaps_for_dataset_flattened = grokking_gaps_for_dataset.reshape(
+                len(additional_lengths) * len(random_seeds)
+            )
+
+            repeated_lengths = np.repeat(additional_lengths, len(random_seeds))
+
+            coordinate_array_for_ds = np.column_stack(
+                (repeated_lengths, grokking_gaps_for_dataset_flattened)
+            )
+
+            print(f"Grokking gap for dataset: {grokking_gaps_for_dataset}")
+
+            # Calculate mean and std values from the grokking_gaps_for_dataset
+            avg_values = np.mean(grokking_gaps_for_dataset, axis=1)
+            std_values = np.std(grokking_gaps_for_dataset, axis=1)
+
+            print(f"Average values: {avg_values}")
+            print(f"Std values: {std_values}")
+
+            if init_index == 0:
+
+                plt.errorbar(
+                    additional_lengths,
+                    avg_values,
+                    yerr=std_values,
+                    fmt="o",
+                    label=dataset_name,
+                    capsize=5,
+                    color=dict_of_colors[dataset_name],
+                )
+            
+            else:
+
+                plt.errorbar(
+                    additional_lengths,
+                    avg_values,
+                    yerr=std_values,
+                    fmt="o",
+                    capsize=5,
+                    color=dict_of_colors[dataset_name],
+                )
+
+            ln_y = np.where(
+                coordinate_array_for_ds[:, 1] <= 0, 0, np.log(coordinate_array_for_ds[:, 1])
+            )
+
+            # Perform linear fit
+            coefficients = np.polyfit(coordinate_array_for_ds[:, 0], ln_y, 1)
+
+            # Extract exponential model parameters a and b
+            a = coefficients[0]
+            b = np.exp(coefficients[1])
+
+            correlation_coefficient, p_value = pearsonr(coordinate_array_for_ds[:, 0], ln_y)
+
+            print(f"Dataset: {dataset_name}")
+            print(f"Correlation coefficient: {correlation_coefficient}")
+            print(f"P-value: {p_value}\n\n")
+
+    plt.xlabel("Additional Length")
+    plt.ylabel("Grokking Gap")
+    plt.yscale("log")
+    plt.legend(loc="best")
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.tight_layout()
+
+    plt.savefig(
+        "experiments/grokking_via_concealment_with_initialisation/grokking_vs_length.pdf",
+        bbox_inches="tight",
+    )
+
+
 def experiment_grokking_plain_gp_regression():
     """
     Does grokking behaviour happens when using a diffirent model,
