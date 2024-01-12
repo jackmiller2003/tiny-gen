@@ -4179,6 +4179,68 @@ def experiment_spheres_around_optimal_solution():
         )
 
 
+def experiment_grokking_without_weight_decay():
+    """
+    Do we get grokking without weight decay?
+    """
+
+    experiment_path = Path("experiments/grokking_without_weight_decay/")
+
+    os.makedirs("experiments/grokking_without_weight_decay/", exist_ok=True)
+
+    training_dataset_size = 800
+    number_validation_samples = 200
+    random_seed = 0
+    hidden_size = 1000
+    learning_rate = 3e-2
+    weight_decay = 0
+    epochs = 4000
+    batch_size = training_dataset_size
+    k = 3
+    input_size = 30
+    output_size = 2
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=training_dataset_size + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [training_dataset_size, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    (model, observer) = train_model(
+        training_dataset=training_dataset,
+        validation_dataset=validation_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+    )
+
+    observer.plot_me(path=experiment_path, log=False)
+
+
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
 
