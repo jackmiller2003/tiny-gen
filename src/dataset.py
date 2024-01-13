@@ -6,7 +6,11 @@ from torch.utils.data import TensorDataset
 from typing import Tuple, Optional, Any
 import random
 import numpy as np
+import idx2numpy
 from sympy import mod_inverse
+import requests
+import pickle
+import os
 
 
 class ParityTask(Dataset):
@@ -599,6 +603,142 @@ class NoisySineWaveTask(Dataset):
     def __name__(self) -> str:
         return "NoisySineWaveTask"
 
+
+class MNIST1DTask(Dataset):
+    """
+    Class for interacting with the MNIST 1D dataset.
+
+    Requires internet if downloading.
+    """
+
+    def __init__(
+        self,
+        random_seed: int,
+        train: bool = True,
+        download: bool = True,
+    ) -> None:
+        self.random_seed = random_seed
+        self.train = train
+        self.download = download
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+    
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the MNIST 1D task.
+        """
+
+        data_exists = os.path.isfile('./data/mnist1d_data.pkl')
+
+        if not self.download and not data_exists:
+            raise ValueError("Data does not exist. Set download=True to download.")
+        elif self.download and not data_exists:
+            url = 'https://github.com/greydanus/mnist1d/raw/master/mnist1d_data.pkl'
+            r = requests.get(url, allow_redirects=True)
+            open('./data/mnist1d_data.pkl', 'wb').write(r.content)
+
+        with open('./data/mnist1d_data.pkl', 'rb') as handle:
+            data = pickle.load(handle)
+            
+        # Get training examples
+        
+        if self.train:
+            x = data['x']
+            y = data['y']
+        else:
+            x = data['x_test']
+            y = data['y_test']
+
+        # Convert y targets from class labels to one_hot vectors
+        y = torch.nn.functional.one_hot(torch.tensor(y), num_classes=10)
+
+        x_tensor = torch.tensor(x, dtype=torch.float)
+        y_tensor = torch.tensor(y, dtype=torch.float)
+
+        self.data = x_tensor
+        self.targets = y_tensor
+    
+    def __len__(self) -> int:
+        return self.num_samples
+    
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "MNIST1DTask"
+
+
+class MNISTTask(Dataset):
+    """
+    Assumes availability of the MNIST dataset as downloaded from http://yann.lecun.com/exdb/mnist/.
+    """
+
+    def __init__(
+        self,
+        random_seed: int,
+        train: bool = True,
+        flatten: bool = True
+    ) -> None:
+        self.random_seed = random_seed
+        self.train = train
+        self.flatten = flatten
+
+        # Setting random seeds
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+        self._generate_data()
+    
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the MNIST 1D task.
+        """
+
+        if self.train:
+            examples_file = 'data/train-images.idx3-ubyte'
+            examples_array = idx2numpy.convert_from_file(examples_file)
+            
+            # Convert examples array to float between 0 and 1
+            examples_array = examples_array / 255.0
+            
+            labels_file = 'data/train-labels.idx1-ubyte'
+            labels_array = idx2numpy.convert_from_file(labels_file)
+        else:
+            examples_file = 'data/t10k-images.idx3-ubyte'
+            examples_array = idx2numpy.convert_from_file(examples_file)
+
+            # Convert examples array to float between 0 and 1
+            examples_array = examples_array / 255.0
+            
+            labels_file = 'data/t10k-labels.idx1-ubyte'
+            labels_array = idx2numpy.convert_from_file(labels_file)
+
+        if self.flatten:
+            num_samples = examples_array.shape[0]
+            examples_array = examples_array.reshape(num_samples, -1)
+
+        labels_tensor = torch.tensor(labels_array, dtype=torch.int64)
+        one_hot_labels = torch.nn.functional.one_hot(labels_tensor, num_classes=10)
+
+        self.data = torch.tensor(examples_array, dtype=torch.float32)
+        self.targets = torch.tensor(one_hot_labels, dtype=torch.float32)
+
+        self.num_samples = self.data.shape[0]
+    
+    def __len__(self) -> int:
+        return self.num_samples
+    
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "MNISTTask"
 
 class HiddenDataset(Dataset):
     """

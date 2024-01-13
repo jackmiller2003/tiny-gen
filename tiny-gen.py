@@ -38,6 +38,8 @@ from src.dataset import (
     PolynomialTask,
     PolynomialTaskTwo,
     NoisySineWaveTask,
+    MNIST1DTask,
+    MNISTTask,
     combine_datasets,
     generate_zero_one_classification,
 )
@@ -3631,6 +3633,362 @@ def experiment_spheres_around_optimal_solution():
             experiment_path / Path(f"combined_metrics_{n_directions}.pdf"),
         )
 
+
+def experiment_training_with_mnist_1d():
+    """
+    Determining whether the concealment strategy induces grokking on MNIST-1D.
+    """
+
+    experiment_path = Path("experiments/concealment_with_mnist_1d/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 5e-3
+    batch_size = 32
+    epochs = 100
+    number_training_samples = 5000
+    number_validation_samples = 1000
+    random_seed = 0
+    output_size = 10
+
+    # Try downloading
+    train_dataset = MNIST1DTask(
+        random_seed=random_seed,
+        train=True,
+        download=False
+    )
+    
+    test_dataset = MNIST1DTask(
+        random_seed=random_seed,
+        train=False,
+        download=False
+    )
+
+    example_size = train_dataset[0][0].shape[0]
+
+    print(f"Example size is: {example_size}")
+
+    model = ExpandableModel(
+        input_size=example_size,
+        hidden_layer_sizes=[512,512,512],
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    (model, observer) = train_model(
+        training_dataset=train_dataset,
+        validation_dataset=test_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+    )
+
+    observer.plot_me(path=experiment_path / Path("expandable_model"), log=False)
+    
+
+def experiment_concealment_with_mnist_1d():
+    """
+    Determining whether the concealment strategy induces grokking on MNIST-1D.
+    """
+
+    experiment_path = Path("experiments/concealment_with_mnist_1d/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    weight_decay = 1e-1
+    learning_rate = 2e-3
+    batch_size = 64
+    input_size = 40
+    epochs = 1500
+    number_training_samples = 5000
+    number_validation_samples = 1000
+    random_seed = 0
+    output_size = 10
+
+    # Try downloading
+    train_dataset = MNIST1DTask(
+        random_seed=random_seed,
+        train=True,
+        download=False
+    )
+    
+    test_dataset = MNIST1DTask(
+        random_seed=random_seed,
+        train=False,
+        download=False
+    )
+
+    observers = []
+
+    for additional_dimensions in [20,80, 160, 320, 640]:
+
+        train_dataset = HiddenDataset(
+            dataset=train_dataset,
+            total_length=input_size+additional_dimensions,
+            random_seed=random_seed,
+        )
+
+        test_dataset = HiddenDataset(
+            dataset=test_dataset,
+            total_length=input_size+additional_dimensions,
+            random_seed=random_seed,
+        )
+
+
+        model = ExpandableModel(
+            input_size=input_size+additional_dimensions,
+            hidden_layer_sizes=[512,512],
+            output_size=output_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=train_dataset,
+            validation_dataset=test_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        observer.plot_me(path=experiment_path / Path(f"additional_dimensions_{additional_dimensions}"), log=False)
+
+        observers.append(observer)
+    
+    os.mkdir(experiment_path / Path("validation_and_accuracy"))
+
+    plot_validation_and_accuracy_from_observers(
+        observers,
+        label_list=[f"{additional_dimensions}" for additional_dimensions in [20,80, 160, 320, 640]],
+        path=experiment_path / Path("validation_and_accuracy"),
+    )
+
+
+def experiment_training_with_mnist():
+    """
+    Determining whether the concealment strategy induces grokking on MNIST-1D.
+    """
+
+    experiment_path = Path("experiments/training_with_mnist/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 2e-3
+    batch_size = 32
+    epochs = 300
+    random_seed = 0
+    output_size = 10
+
+    # Try downloading
+    train_dataset = MNISTTask(
+        random_seed=random_seed,
+        train=True,
+        flatten=True
+    )
+
+    train_dataset_unflattened = MNISTTask(
+        random_seed=random_seed,
+        train=True,
+        flatten=False
+    )
+    
+    test_dataset = MNISTTask(
+        random_seed=random_seed,
+        train=False,
+        flatten=True
+    )
+
+    image = train_dataset_unflattened[0][0]
+    label = train_dataset_unflattened[0][1]
+
+    plt.imshow(image.squeeze(), cmap="gray")
+    plt.title(f"Label: {torch.argmax(label)}")
+
+    plt.savefig(experiment_path / Path("example_mnist_image.png"))
+
+    # Train a model
+
+    example_size = train_dataset[0][0].shape[0]
+
+    model = TinyModel(
+        input_size=example_size,
+        hidden_layer_size=1000,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    (model, observer) = train_model(
+        training_dataset=train_dataset,
+        validation_dataset=test_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+    )
+
+    observer.plot_me(path=experiment_path / Path("tiny_model"), log=False)
+
+
+def experiment_concealment_with_mnist():
+    """
+    Determining whether the concealment strategy induces grokking on MNIST-1D.
+    """
+
+    experiment_path = Path("experiments/concealment_with_mnist/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 2e-3
+    batch_size = 32
+    epochs = 1500
+    random_seed = 0
+    output_size = 10
+
+    # Try downloading
+    train_dataset = MNISTTask(
+        random_seed=random_seed,
+        train=True,
+    )
+    
+    test_dataset = MNISTTask(
+        random_seed=random_seed,
+        train=False,
+    )
+
+    input_size = train_dataset[0][0].shape[0]
+
+    observers = []
+
+    additional_dimenion_list = [1e3, 5e3, 1e4]
+    additional_dimenion_list = [int(additional_dimenion) for additional_dimenion in additional_dimenion_list]
+
+    for additional_dimensions in additional_dimenion_list:
+
+        train_dataset = HiddenDataset(
+            dataset=train_dataset,
+            total_length=input_size+additional_dimensions,
+            random_seed=random_seed,
+        )
+
+        test_dataset = HiddenDataset(
+            dataset=test_dataset,
+            total_length=input_size+additional_dimensions,
+            random_seed=random_seed,
+        )
+
+        model = TinyModel(
+            input_size=input_size+additional_dimensions,
+            hidden_layer_size=1000,
+            output_size=output_size,
+            random_seed=random_seed,
+        )
+
+        (model, observer) = train_model(
+            training_dataset=train_dataset,
+            validation_dataset=test_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        observer.plot_me(path=experiment_path / Path(f"additional_dimensions_{additional_dimensions}"), log=False)
+
+        observers.append(observer)
+    
+    os.mkdir(experiment_path / Path("validation_and_accuracy"))
+
+    plot_validation_and_accuracy_from_observers(
+        observers,
+        label_list=[f"{additional_dimensions}" for additional_dimensions in additional_dimenion_list],
+        path=experiment_path / Path("validation_and_accuracy"),
+    )
+
+
+def experiment_grokking_with_mnist():
+    """
+    Determining whether the concealment strategy induces grokking on MNIST-1D.
+    """
+
+    experiment_path = Path("experiments/concealment_with_mnist/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 2e-3
+    batch_size = 128
+    epochs = 1000
+    random_seed = 0
+    output_size = 10
+
+    # Try downloading
+    train_dataset = MNISTTask(
+        random_seed=random_seed,
+        train=True,
+    )
+    
+    test_dataset = MNISTTask(
+        random_seed=random_seed,
+        train=False,
+    )
+
+    input_size = train_dataset[0][0].shape[0]
+
+    additional_dimensions = int(1e5)
+
+    train_dataset = HiddenDataset(
+        dataset=train_dataset,
+        total_length=input_size+additional_dimensions,
+        random_seed=random_seed,
+    )
+
+    test_dataset = HiddenDataset(
+        dataset=test_dataset,
+        total_length=input_size+additional_dimensions,
+        random_seed=random_seed,
+    )
+
+    model = ExpandableModel(
+        input_size=input_size+additional_dimensions,
+        hidden_layer_sizes=[1000,1000,1000],
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    (model, observer) = train_model(
+        training_dataset=train_dataset,
+        validation_dataset=test_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="cross-entropy",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+    )
+
+    observer.plot_me(path=experiment_path / Path(f"additional_dimensions_{additional_dimensions}"), log=False)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
