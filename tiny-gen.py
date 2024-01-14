@@ -4188,17 +4188,18 @@ def experiment_grokking_without_weight_decay():
 
     os.makedirs("experiments/grokking_without_weight_decay/", exist_ok=True)
 
-    training_dataset_size = 800
+    training_dataset_size = 1000
     number_validation_samples = 200
     random_seed = 0
     hidden_size = 1000
     learning_rate = 3e-2
     weight_decay = 0
-    epochs = 4000
+    epochs = 10000
     batch_size = training_dataset_size
     k = 3
     input_size = 30
     output_size = 2
+    batch_size = training_dataset_size
 
     entire_dataset = ParityTask(
         sequence_length=k,
