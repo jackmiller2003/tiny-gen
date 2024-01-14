@@ -3934,10 +3934,10 @@ def experiment_grokking_with_mnist():
 
     os.makedirs(experiment_path, exist_ok=True)
 
-    weight_decay = 1e-2
+    weight_decay = 2e-3
     learning_rate = 2e-3
     batch_size = 128
-    epochs = 1000
+    epochs = 200
     random_seed = 0
     output_size = 10
 
@@ -3954,7 +3954,7 @@ def experiment_grokking_with_mnist():
 
     input_size = train_dataset[0][0].shape[0]
 
-    additional_dimensions = int(1e5)
+    additional_dimensions = int(5e4)
 
     train_dataset = HiddenDataset(
         dataset=train_dataset,
