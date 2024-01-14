@@ -4193,7 +4193,7 @@ def experiment_grokking_without_weight_decay():
     random_seed = 0
     hidden_size = 1000
     learning_rate = 3e-2
-    weight_decay = 0
+    weight_decay = 1e-2
     epochs = 10000
     batch_size = training_dataset_size
     k = 3
@@ -4238,7 +4238,9 @@ def experiment_grokking_without_weight_decay():
         progress_bar=True,
     )
 
-    observer.plot_me(path=experiment_path, log=False)
+    os.mkdir(experiment_path / Path(f"weight_decay_{weight_decay}"))
+
+    observer.plot_me(path=experiment_path / Path(f"weight_decay_{weight_decay}"), log=False)
 
 
 
