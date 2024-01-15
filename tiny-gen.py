@@ -3934,10 +3934,10 @@ def experiment_grokking_with_mnist():
 
     os.makedirs(experiment_path, exist_ok=True)
 
-    weight_decay = 2e-3
+    weight_decay = 4e-3
     learning_rate = 2e-3
     batch_size = 128
-    epochs = 200
+    epochs = 10000
     random_seed = 0
     output_size = 10
 
@@ -3975,6 +3975,14 @@ def experiment_grokking_with_mnist():
         random_seed=random_seed,
     )
 
+    # Set up observer to watch first layer weights
+
+    observer = Observer(
+        observation_settings={
+            "weight_norm": {"frequency": 5, "layers": [1, 2, 3]},
+        },
+    )
+
     (model, observer) = train_model(
         training_dataset=train_dataset,
         validation_dataset=test_dataset,
@@ -3988,7 +3996,7 @@ def experiment_grokking_with_mnist():
         progress_bar=True,
     )
 
-    observer.plot_me(path=experiment_path / Path(f"additional_dimensions_{additional_dimensions}"), log=False)
+    observer.plot_me(path=experiment_path / Path(f"additional_dimensions_{additional_dimensions}_{epochs}"), log=False)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
