@@ -10,3 +10,4 @@ tmp
 models
 .git
 cache_analysis.py
+data

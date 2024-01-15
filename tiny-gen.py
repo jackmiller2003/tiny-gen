@@ -3627,6 +3627,187 @@ def experiment_grokking_lr_weight_analysis():
 
     plt.savefig(path_of_experiment / Path("grokking_lr_weight_analysis.pdf"), bbox_inches="tight")
 
+
+def experiment_grokking_lr_wout_weight_decay():
+    """
+    Can we induce grokking on linear regression?
+    """
+
+    path_of_experiment = Path("experiments/grokking_lr_wout_weight_decay")
+
+    os.makedirs(path_of_experiment, exist_ok=True)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    epochs = 1000000
+
+    all_train_accs, all_valid_accs, all_train_complexity, all_train_fit = (
+        [],
+        [],
+        [],
+        [],
+    )
+
+    n_runs = 5
+
+    for random_seed in tqdm(range(0, n_runs)):
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
+
+        # we generate some data
+        x = torch.from_numpy(np.random.rand(100, 1) - 0.5).to(torch.float)
+        y = 0.3 * x
+        y = y.to(torch.float)
+        y = y.squeeze()
+        n_train = 2
+
+        x = add_features_for_lr_classification(x)
+
+        # split for train / validation
+        x_train, y_train = x[:n_train, :].to(device), y[:n_train].to(device)
+        x_valid, y_valid = x[n_train:, :].to(device), y[n_train:].to(device)
+
+        # Extend a bit for visualization purposes
+        x_plot = torch.linspace(-1, 1, 500).view(-1, 1)
+        x_plot = add_features_for_lr_classification(x_plot)
+
+        x_plot = x_plot.to(device)
+
+        # we create a linear regression model
+        input_size = x_train.shape[1]
+        output_size = 1
+
+        model = TinyLinearModel(input_size, output_size, random_seed)
+
+        init_weight = 5e-4
+
+        # change the init to induce grokking, we want to start in high complexity region
+        model.fc1.weight.data = torch.tensor([[float(init_weight), float(1-init_weight), float(1-init_weight), float(1-init_weight)]]).to(device)
+
+        # move model to device
+        model = model.to(device)
+
+        optimiser = torch.optim.SGD(model.parameters(), lr=1e-3, weight_decay=0)
+        train_acc = []
+        val_acc = []
+        training_fit = []
+        valid_fit = []
+        training_total_loss = []
+        training_reg = []
+
+        for epoch in range(epochs):
+            optimiser.zero_grad()
+            output = model(x_train)
+            data_fit = gaussian_loss(output.squeeze(), y_train) / n_train
+            l2_term = l2_norm_for_lr(model, device) / n_train
+
+            l2_term_weight = 0
+
+            total_loss = data_fit + l2_term_weight*l2_term
+            total_loss.backward()
+            optimiser.step()
+
+            training_reg.append(l2_term.item())
+            training_fit.append(data_fit.item())
+            training_total_loss.append(total_loss.item())
+
+            val_outputs = model(x_valid)
+            valid_data_fit = (
+                gaussian_loss(val_outputs.squeeze(), y_valid) / x_valid.shape[0]
+            )
+            valid_fit.append(valid_data_fit.item())
+
+            train_acc.append(accuracy_for_negative_positive(output.squeeze(), y_train))
+            val_acc.append(
+                accuracy_for_negative_positive(val_outputs.squeeze(), y_valid)
+            )
+
+        all_train_accs.append(train_acc)
+        all_valid_accs.append(val_acc)
+        all_train_complexity.append(training_reg)
+        all_train_fit.append(training_fit)
+
+    all_train_accs = np.array(all_train_accs)
+    all_valid_accs = np.array(all_valid_accs)
+    all_train_complexity = np.array(all_train_complexity)
+    all_train_fit = np.array(all_train_fit)
+
+    avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
+        axis=0
+    ) / np.sqrt(n_runs)
+
+    avg_valid_accs, std_valid_accs = all_valid_accs.mean(axis=0), all_valid_accs.std(
+        axis=0
+    ) / np.sqrt(n_runs)
+
+    # Get the average grokking gap. I.e. the difference between the point tran_accs reaches 95% and valid_accs reaches 95%
+
+    gap_threshold = 0.95
+    train_grokking_point = epochs
+    valid_grokking_point = epochs
+
+    for i in range(len(avg_train_accs)):
+        if avg_train_accs[i] > gap_threshold:
+            train_grokking_point = i
+            break
+    
+    for i in range(len(avg_valid_accs)):
+        if avg_valid_accs[i] > gap_threshold:
+            valid_grokking_point = i
+            break
+
+    avg_train_complexity, std_train_complexity = (
+        all_train_complexity.mean(axis=0),
+        all_train_complexity.std(axis=0) / np.sqrt(n_runs),
+    )
+
+    avg_train_fit, std_train_fit = (
+        all_train_fit.mean(axis=0),
+        all_train_fit.std(axis=0) / np.sqrt(n_runs),
+    )
+
+
+    # Create a subplot with two side by side
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), dpi=300)
+
+    font = {
+            "family": "normal",
+            # 'weight' : 'bold',
+            "size": 14,
+        }
+
+    matplotlib.rc("font", **font)
+
+    # Factor to skip points
+    step = 100
+
+    # Line of training accuracy
+    axes[0].plot(range(0, len(avg_train_accs), step), avg_train_accs[::step], label="Training Accuracy", color="blue")
+    axes[0].fill_between(range(0, len(avg_train_accs), step), (avg_train_accs - std_train_accs)[::step], (avg_train_accs + std_train_accs)[::step], color="blue", alpha=0.3)
+
+    # Line of validation accuracy
+    axes[0].plot(range(0, len(avg_valid_accs), step), avg_valid_accs[::step], label="Validation Accuracy", color="red")
+    axes[0].fill_between(range(0, len(avg_valid_accs), step), (avg_valid_accs - std_valid_accs)[::step], (avg_valid_accs + std_valid_accs)[::step], color="red", alpha=0.3)
+
+    axes[0].set_xscale("log")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Accuracy")
+    axes[0].legend(loc="lower right")
+
+    # Line of training fit
+    axes[1].plot(range(0, len(avg_train_fit), step), avg_train_fit[::step], label="Training Fit", color="blue")
+    axes[1].fill_between(range(0, len(avg_train_fit), step), (avg_train_fit - std_train_fit)[::step], (avg_train_fit + std_train_fit)[::step], color="blue", alpha=0.3)
+
+    # Line of training l2 norm
+    axes[1].plot(range(0, len(avg_train_complexity), step), avg_train_complexity[::step], label="Training L2 Norm", color="red")
+    axes[1].fill_between(range(0, len(avg_train_complexity), step), (avg_train_complexity - std_train_complexity)[::step], (avg_train_complexity + std_train_complexity)[::step], color="red", alpha=0.3)
+
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_yscale("log")
+    axes[1].legend(loc="upper right")
+
+    plt.savefig(path_of_experiment / Path("grokking_lr_without_weight_decay.pdf"), bbox_inches="tight")
+    plt.savefig(path_of_experiment / Path("grokking_lr_without_weight_decay.png"), bbox_inches="tight")
+
 def experiment_training_with_vafe():
     """
     We look at the variational free energy and its components during grokking.
