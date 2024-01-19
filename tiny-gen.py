@@ -2912,11 +2912,12 @@ def experiment_grokking_lr_classification():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     epochs = 5000
 
-    all_train_accs, all_valid_accs, all_train_complexity, all_train_fit = (
+    all_train_accs, all_valid_accs, all_train_complexity, all_train_fit, all_val_fit = (
         [],
         [],
         [],
         [],
+        []
     )
 
     n_runs = 5
@@ -3001,11 +3002,13 @@ def experiment_grokking_lr_classification():
         all_valid_accs.append(val_acc)
         all_train_complexity.append(training_reg)
         all_train_fit.append(training_fit)
+        all_val_fit.append(valid_fit)
 
     all_train_accs = np.array(all_train_accs)
     all_valid_accs = np.array(all_valid_accs)
     all_train_complexity = np.array(all_train_complexity)
     all_train_fit = np.array(all_train_fit)
+    all_val_fit = np.array(all_val_fit)
 
     avg_train_accs, std_train_accs = all_train_accs.mean(axis=0), all_train_accs.std(
         axis=0
@@ -3024,6 +3027,13 @@ def experiment_grokking_lr_classification():
         all_train_fit.mean(axis=0),
         all_train_fit.std(axis=0) / np.sqrt(n_runs),
     )
+
+    avg_val_fit, std_val_fit = (
+        all_val_fit.mean(axis=0),
+        all_val_fit.std(axis=0) / np.sqrt(n_runs),
+    )
+
+    point_of_min_train_fit = np.argmin(avg_train_fit)
 
     font = {
         "family": "normal",
@@ -3077,11 +3087,23 @@ def experiment_grokking_lr_classification():
         alpha=0.3,
     )
 
+    axes[1].plot(epoch_range, avg_val_fit, "-g", label="Validation Data Fit")
+    axes[1].fill_between(
+        epoch_range,
+        avg_val_fit - std_val_fit,
+        avg_val_fit + std_val_fit,
+        color="g",
+        alpha=0.3,
+    )
+
     axes[1].set_xscale("log")
     axes[1].set_yscale("log")
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Objective Value")
     axes[1].legend(loc="upper right")
+
+    axes[1].axvline(point_of_min_train_fit, color="k", alpha=0.3)
+    
 
     # Adjust space between subplots
     plt.tight_layout()
