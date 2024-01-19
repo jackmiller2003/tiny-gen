@@ -4193,7 +4193,7 @@ def experiment_grokking_without_weight_decay():
     random_seed = 0
     hidden_size = 1000
     learning_rate = 3e-2
-    weight_decay = 1e-2
+    weight_decay = 0
     epochs = 10000
     batch_size = training_dataset_size
     k = 3
@@ -4243,6 +4243,104 @@ def experiment_grokking_without_weight_decay():
     observer.plot_me(path=experiment_path / Path(f"weight_decay_{weight_decay}"), log=False)
 
 
+def experiment_grokking_without_weight_decay_changing_learning_rate():
+    """
+    Do we get grokking without weight decay?
+    """
+
+    experiment_path = Path("experiments/grokking_without_weight_decay_changing_learning_rate/")
+
+    os.makedirs(experiment_path, exist_ok=True)
+
+    training_dataset_size = 1200
+    number_validation_samples = 300
+    random_seed = 0
+    hidden_size = 1000
+    weight_decay = 0
+    epochs = 50000
+    batch_size = training_dataset_size
+    k = 3
+    input_size = 30
+    output_size = 2
+    batch_size = training_dataset_size
+
+    learning_rates = [1e-3, 5e-4]
+
+    entire_dataset = ParityTask(
+        sequence_length=k,
+        num_samples=training_dataset_size + number_validation_samples,
+        random_seed=random_seed,
+    )
+
+    hidden_dataset = HiddenDataset(
+        dataset=entire_dataset,
+        total_length=input_size,
+        random_seed=random_seed,
+    )
+
+    training_dataset, validation_dataset = torch.utils.data.random_split(
+        hidden_dataset,
+        [training_dataset_size, number_validation_samples],
+    )
+
+    model = TinyModel(
+        input_size=input_size,
+        hidden_layer_size=hidden_size,
+        output_size=output_size,
+        random_seed=random_seed,
+    )
+
+    observers = []
+
+    for learning_rate in learning_rates:
+
+        (model, observer) = train_model(
+            training_dataset=training_dataset,
+            validation_dataset=validation_dataset,
+            model=model,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            epochs=epochs,
+            batch_size=batch_size,
+            loss_function_label="cross-entropy",
+            optimiser_function_label="sgd",
+            progress_bar=True,
+        )
+
+        os.makedirs(experiment_path / Path(f"learning_rate_{learning_rate}"), exist_ok=True)
+
+        observer.plot_me(path=experiment_path / Path(f"learning_rate_{learning_rate}"), log=False)
+
+        observers.append(observer)
+
+    # Plot the training and validation accuracy for all learning rates on the same axes
+        
+    fig = plt.figure()
+
+    # Create a set of colors based on the number of learning rates
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(learning_rates)))
+
+    for i, observer in enumerate(observers):
+        plt.plot(observer.training_accuracy, label=f"lr={learning_rates[i]}", color=colors[i])
+        plt.plot(observer.validation_accuracy, color=colors[i], linestyle="--")
+
+    plt.legend()
+    plt.xscale("log")
+
+    plt.savefig(experiment_path / Path("training_and_validation_accuracy.pdf"), bbox_inches="tight")
+
+    # Do the same for training and validation loss
+
+    fig = plt.figure()
+
+    for i, observer in enumerate(observers):
+        plt.plot(observer.training_losses, label=f"lr={learning_rates[i]}", color=colors[i])
+        plt.plot(observer.validation_losses, color=colors[i], linestyle="--")
+    
+    plt.legend()
+    plt.xscale("log")
+
+    plt.savefig(experiment_path / Path("training_and_validation_loss.pdf"), bbox_inches="tight")
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
