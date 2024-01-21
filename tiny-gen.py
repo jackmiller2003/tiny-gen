@@ -70,6 +70,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import pickle
 import copy
+import matplotlib.colors as mcolors
+
 
 
 def experiment_grokking_plain():
@@ -1682,6 +1684,551 @@ def experiment_grokking_via_concealment():
         "experiments/grokking_via_concealment/grokking_vs_length.pdf",
         bbox_inches="tight",
     )
+
+
+def experiment_grokking_via_concealment_with_initialisation():
+    """
+    In this experiment we wish to examine how the grokking concealment strategy is impacted
+    by the initialisation of the weights. We will do this by varying the weight norm and
+    seeing how the grokking gap changes.
+    """
+
+    os.makedirs("experiments/grokking_via_concealment_with_initialisation/", exist_ok=True)
+    cache_file = "experiments/grokking_via_concealment_with_initialisation/cache.json"
+
+    if os.path.exists(cache_file):
+        with open(cache_file) as f:
+            cache = json.load(f)
+        
+        # Save a old version
+        
+        with open(cache_file + "-old", "w") as f:
+            json.dump(cache, f)
+    else:
+        cache = {}
+
+    weight_decay = 1e-2
+    learning_rate = 1e-1 # Should be 1e-1
+    batch_size = 32
+    p = 7
+    hidden_size = 1000
+    epochs = 750 # should be 750 ish
+    number_training_samples = 700
+    number_validation_samples = 200
+
+    threshold = 0.95
+
+    additional_lengths = [20, 30, 40]
+
+    initialisations = [1e-8, 1e-6, 1e-4, 1e-2, 1]
+
+    datasets_to_test = [
+        ModuloAdditionTask,
+        ModuloSubtractionTask,
+        ModuloDivisionTask,
+        PolynomialTask,
+        PolynomialTaskTwo,
+        ModuloMultiplicationDoubleXTask
+    ]
+
+    random_seeds = list(range(0, 3))
+
+    array_of_gaps = np.zeros(
+        (len(additional_lengths), len(random_seeds), len(datasets_to_test), len(initialisations))
+    )
+
+    array_of_relative_gaps = np.zeros(
+        (len(additional_lengths), len(random_seeds), len(datasets_to_test), len(initialisations))
+    )
+
+    array_of_layer_1_weight_norm = np.zeros(
+        (len(additional_lengths), len(random_seeds), len(datasets_to_test), len(initialisations))
+    )
+
+    array_of_layer_2_weight_norm = np.zeros(
+        (len(additional_lengths), len(random_seeds), len(datasets_to_test), len(initialisations))
+    )
+
+    for i, additional_length in tqdm(
+        enumerate(additional_lengths), desc="Additional length"
+    ):
+        print(f"Working on additional length: {additional_length}")
+        all_dataset_grokking_for_k = []
+
+        for j, random_seed in enumerate(random_seeds):
+            print(f"Working on random seed: {random_seed}")
+            accuracies = []
+
+            datasets = []
+
+            for dataset in datasets_to_test:
+                if dataset.__name__ != "ParityTask":                
+                    datasets.append(
+                        dataset(
+                            num_samples=number_training_samples + number_validation_samples,
+                            random_seed=random_seed,
+                            modulo=p,
+                        )
+                    )
+                else:
+                    datasets.append(
+                        dataset(
+                            sequence_length=3,
+                            num_samples=number_training_samples + number_validation_samples,
+                            random_seed=random_seed,
+                        )
+                    )
+
+            for k, dataset in enumerate(datasets):
+                
+                for l, initialisation in enumerate(initialisations):
+                    found_key = False
+
+                    cache_name = f"{additional_length}_{random_seed}_{dataset.__name__()}_{initialisation}_{epochs}"
+
+                    try:
+                        cache[cache_name]
+                        found_key = True
+                    except KeyError:
+                        pass
+
+                
+                    hidden_dataset = HiddenDataset(
+                        dataset=dataset,
+                        total_length=2 * p + additional_length,
+                        random_seed=random_seed,
+                    )
+
+                    (
+                        hidden_training_dataset,
+                        hidden_validation_dataset,
+                    ) = torch.utils.data.random_split(
+                        hidden_dataset,
+                        [number_training_samples, number_validation_samples],
+                    )
+
+                    model_hidden = TinyModel(
+                        input_size=2 * p + additional_length,
+                        hidden_layer_size=hidden_size,
+                        output_size=p,
+                        random_seed=random_seed,
+                    )
+
+                    # Change all model_hidden weights by the initialisation
+
+                    for param in model_hidden.parameters():
+                        param.data *= initialisation
+
+                    print(f"Average param value is: {torch.mean(torch.abs(next(model_hidden.parameters())))}")
+                    print(f"Initialisation is: {initialisation}")
+
+                    if found_key:
+                        training_accuracy = cache[cache_name]["training_accuracy"]
+                        validation_accuracy = cache[cache_name]["validation_accuracy"]
+                        layer_1_weight_norm = cache[cache_name]["layer_1_weight_norm"]
+                        layer_2_weight_norm = cache[cache_name]["layer_2_weight_norm"]
+                    else:
+                        oberver_hidden = Observer(
+                            observation_settings={"weight_norm": {"frequency": 1, "layers": [1, 2]}},
+                        )
+
+                        (model_hidden, observer_hidden) = train_model(
+                            training_dataset=hidden_training_dataset,
+                            validation_dataset=hidden_validation_dataset,
+                            model=model_hidden,
+                            learning_rate=learning_rate,
+                            weight_decay=weight_decay,
+                            epochs=epochs,
+                            batch_size=batch_size,
+                            loss_function_label="cross-entropy",
+                            optimiser_function_label="sgd",
+                            progress_bar=True,
+                            observer=oberver_hidden,
+                        )
+
+                        training_accuracy = np.array(observer_hidden.training_accuracy)
+                        validation_accuracy = np.array(observer_hidden.validation_accuracy)
+                        layer_1_weight_norm = np.array(observer_hidden.weight_norms[1])
+                        layer_2_weight_norm = np.array(observer_hidden.weight_norms[2])
+
+                        layer_1_weight_norm_list = [float(item) for item in layer_1_weight_norm]
+                        layer_2_weight_norm_list = [float(item) for item in layer_2_weight_norm]
+
+                        cache[cache_name] = {
+                            "training_accuracy": observer_hidden.training_accuracy,
+                            "validation_accuracy": observer_hidden.validation_accuracy,
+                            "layer_1_weight_norm": layer_1_weight_norm_list,
+                            "layer_2_weight_norm": layer_2_weight_norm_list,
+                        }
+
+                    training_indices = np.where(np.array(training_accuracy) > threshold)
+
+                    if training_indices[0].size > 0:
+                        index_of_train = training_indices[0][0]
+                    else:
+                        index_of_train = epochs - 1
+
+                    validation_indices = np.where(np.array(validation_accuracy) > threshold)
+
+                    if validation_indices[0].size > 0:
+                        index_of_val = validation_indices[0][0]
+                    else:
+                        index_of_val = epochs - 1
+
+                    print(f"Index of train: {index_of_train}")
+                    print(f"Index of val: {index_of_val}")
+
+                    array_of_gaps[i, j, k, l] = index_of_val - index_of_train
+
+                    array_of_relative_gaps[i, j, k, l] = (index_of_val - index_of_train) / index_of_train
+
+                    # additional length, random seed, dataset, initialisation
+                    array_of_layer_1_weight_norm[i, j, k, l] = layer_1_weight_norm[index_of_val] - layer_1_weight_norm[index_of_train]
+                    array_of_layer_2_weight_norm[i, j, k, l] = layer_2_weight_norm[index_of_val] - layer_2_weight_norm[index_of_train]
+
+                with open(cache_file, "w") as f:
+                    json.dump(cache, f)
+
+    print(f"Array of gaps: {array_of_gaps}")
+
+    # Place the initialisation axis first and shift everything over by one
+    array_of_gaps = np.moveaxis(array_of_gaps, 3, 0)
+
+    ln_y_for_init, coefficients_for_init, array_of_gaps_for_init = [], [], []
+
+    for index_of_init, array_associated_with_init in enumerate(array_of_gaps):
+        array_of_gaps_for_init.append(array_associated_with_init)
+        
+        flattened_gaps = array_associated_with_init.reshape(
+            len(additional_lengths) * len(random_seeds) * len(datasets_to_test)
+        )
+
+        repeated_lengths = np.repeat(
+            additional_lengths, len(random_seeds) * len(datasets_to_test)
+        )
+
+        coordinate_array = np.column_stack((repeated_lengths, flattened_gaps))
+
+        print(f"Flattened gaps: {flattened_gaps}")
+        print(f"Coordinate array: {coordinate_array}")
+
+        ln_y = np.where(coordinate_array[:, 1] <= 0, 0, np.log(coordinate_array[:, 1]))
+
+        # Perform linear fit
+        coefficients = np.polyfit(coordinate_array[:, 0], ln_y, 1)
+
+        ln_y_for_init.append(ln_y)
+        coefficients_for_init.append(coefficients)
+
+        # Extract exponential model parameters a and b
+        a = coefficients[0]
+        b = np.exp(coefficients[1])
+
+        correlation_coefficient, p_value = pearsonr(coordinate_array[:, 0], ln_y)
+
+        print(f"Total trend... for init {initialisations[index_of_init]}: {array_associated_with_init[0, 0]}")
+        print(f"Correlation coefficient: {correlation_coefficient}")
+        print(f"p-value: {p_value}")
+        print(f"Exponential coefficients: a={a}, b={b}\n\n")
+
+    # Plot the results
+    plt.figure(figsize=(10, 6))
+
+    # Choose color set from matplotlib
+    colors_for_init = plt.cm.Set1(np.linspace(0, 1, len(initialisations)))
+
+    # Create a dictionary with dataset name and a given color
+
+    dataset_names = [dataset.__name__ for dataset in datasets_to_test]
+
+    colormap = plt.cm.get_cmap('viridis', len(dataset_names)) 
+    colors = [colormap(i) for i in range(colormap.N)]
+
+    # Create a dictionary mapping dataset names to colors
+    dict_of_colors = {name: color for name, color in zip(dataset_names, colors)}
+
+    for init_index, init in enumerate(initialisations):
+        
+        print(f"Plotting init: {init}")
+
+        coefficients = coefficients_for_init[init_index]
+
+        a = coefficients[0]
+        b = np.exp(coefficients[1])
+
+        x = np.linspace(
+            min(coordinate_array[:, 0]), max(coordinate_array[:, 0]), 500
+        )  # Generate smoother x values for curve
+        y = b * np.exp(a * x)  # Calculate y-values for the exponential model
+        plt.plot(
+            x, y, "-", color=colors_for_init[init_index], label=f"Initialisation: {init}"
+        )  # 'r-' specifies a red line
+
+        for i, dataset_name in enumerate(dataset_names):
+            # Filter final_array to get rows related to the current dataset
+            grokking_gaps_for_dataset = array_of_gaps_for_init[init_index][:, :, i]
+
+            # Flatten like before
+
+            grokking_gaps_for_dataset_flattened = grokking_gaps_for_dataset.reshape(
+                len(additional_lengths) * len(random_seeds)
+            )
+
+            repeated_lengths = np.repeat(additional_lengths, len(random_seeds))
+
+            coordinate_array_for_ds = np.column_stack(
+                (repeated_lengths, grokking_gaps_for_dataset_flattened)
+            )
+
+            print(f"Grokking gap for dataset: {grokking_gaps_for_dataset}")
+
+            # Calculate mean and std values from the grokking_gaps_for_dataset
+            avg_values = np.mean(grokking_gaps_for_dataset, axis=1)
+            std_values = np.std(grokking_gaps_for_dataset, axis=1)
+
+            print(f"Average values: {avg_values}")
+            print(f"Std values: {std_values}")
+
+            if init_index == 0:
+
+                plt.errorbar(
+                    additional_lengths,
+                    avg_values,
+                    yerr=std_values,
+                    fmt="o",
+                    label=dataset_name,
+                    capsize=5,
+                    color=dict_of_colors[dataset_name],
+                )
+            
+            else:
+
+                plt.errorbar(
+                    additional_lengths,
+                    avg_values,
+                    yerr=std_values,
+                    fmt="o",
+                    capsize=5,
+                    color=dict_of_colors[dataset_name],
+                )
+
+            ln_y = np.where(
+                coordinate_array_for_ds[:, 1] <= 0, 0, np.log(coordinate_array_for_ds[:, 1])
+            )
+
+            # Perform linear fit
+            coefficients = np.polyfit(coordinate_array_for_ds[:, 0], ln_y, 1)
+
+            # Extract exponential model parameters a and b
+            a = coefficients[0]
+            b = np.exp(coefficients[1])
+
+            correlation_coefficient, p_value = pearsonr(coordinate_array_for_ds[:, 0], ln_y)
+
+            print(f"Dataset: {dataset_name}")
+            print(f"Correlation coefficient: {correlation_coefficient}")
+            print(f"P-value: {p_value}\n\n")
+
+    plt.xlabel("Additional Length")
+    plt.ylabel("Grokking Gap")
+    plt.yscale("log")
+    plt.legend(loc="best")
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.tight_layout()
+
+    plt.savefig(
+        "experiments/grokking_via_concealment_with_initialisation/grokking_vs_length.pdf",
+        bbox_inches="tight",
+    )
+
+    # Plot trend between relative gap and addition length
+
+    plt.figure(figsize=(10, 6))
+
+    # Applying a logarithmic transformation to the values
+    log_values = np.log10(initialisations)
+
+    # Normalizing these logarithmic values to the range [0, 1] for color mapping
+    norm = plt.Normalize(min(log_values), max(log_values))
+    colors = plt.cm.coolwarm(norm(log_values))
+
+
+    # Creating a list of colors in hexadecimal format
+    hex_colors = [mcolors.rgb2hex(color) for color in colors]
+
+    six_random_colours = hex_colors
+
+    for init_index, init in enumerate(initialisations):
+        y = np.mean(array_of_relative_gaps[:, :, :, init_index], axis=2)
+        y = np.mean(y, axis=1)
+
+        # Transform y to its logarithmic value
+        log_y = np.log(y)
+
+        # Perform linear fit on the logarithmic scale
+        coefficients = np.polyfit(additional_lengths, log_y, 1)
+
+        # Extract exponential model parameters a and b
+        a = coefficients[0]
+        b = coefficients[1]
+
+        # Calculate correlation on the logarithmic scale
+        correlation_coefficient, p_value = pearsonr(additional_lengths, log_y)
+
+        # Print coefficients and stats
+        print(f"Total trend... for init {initialisations[init_index]}: {log_y[0]}")
+        print(f"Correlation coefficient: {correlation_coefficient}")
+        print(f"p-value: {p_value}")
+        print(f"Coefficients: a={a}, b={b}\n\n")
+
+        # Plot polyfit line
+        x = np.linspace(min(additional_lengths), max(additional_lengths), 500)
+        log_fit_y = a * x + b
+        plt.plot(x, log_fit_y, "-", color=six_random_colours[init_index], label=f"Initialisation: {init}")
+
+        for dataset_index, dataset_name in enumerate(dataset_names):
+            y = np.mean(array_of_relative_gaps[:, :, dataset_index, init_index], axis=1)
+            log_y = np.log(y)
+            yerr = np.std(array_of_relative_gaps[:, :, dataset_index, init_index], axis=1) / y # Error in log scale
+
+            plt.errorbar(additional_lengths, log_y, yerr, fmt="o", capsize=5, color=six_random_colours[init_index])
+
+    plt.xlabel("Additional Length")
+    plt.ylabel("Log of Relative Gap")
+
+    plt.legend(loc="best")
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+
+
+    plt.savefig(
+        "experiments/grokking_via_concealment_with_initialisation/relative_gap_vs_length.pdf",
+        bbox_inches="tight",
+    )
+
+    # Also save as png
+    plt.savefig(
+        "experiments/grokking_via_concealment_with_initialisation/relative_gap_vs_length.png",
+        dpi=400,
+        bbox_inches="tight",
+    )
+
+    # Plotting the evolution of weight norm for the first layer
+
+    weight_norm_1_avg_over_init_length_and_dataset = np.zeros((len(initialisations), len(additional_lengths), len(datasets_to_test)))
+    weight_norm_1_std_over_init_length_and_dataset = np.zeros((len(initialisations), len(additional_lengths), len(datasets_to_test)))
+
+    for init_index, init in enumerate(initialisations):
+        for additional_length_index, additional_length in enumerate(additional_lengths):
+            weight_norm = array_of_layer_1_weight_norm[additional_length_index, :, :, init_index]
+
+            # Get average weight norm
+            avg_weight_norm = np.mean(weight_norm, axis=1)
+
+            # Get std of weight norm
+            std_weight_norm = np.std(weight_norm, axis=1)
+
+            weight_norm_1_avg_over_init_length_and_dataset[init_index, additional_length_index, :] = avg_weight_norm
+            weight_norm_1_std_over_init_length_and_dataset[init_index, additional_length_index, :] = std_weight_norm
+    
+    # Same for second layer
+    weight_norm_2_avg_over_init_length_and_dataset = np.zeros((len(initialisations), len(additional_lengths), len(datasets_to_test)))
+    weight_norm_2_std_over_init_length_and_dataset = np.zeros((len(initialisations), len(additional_lengths), len(datasets_to_test)))
+
+    for init_index, init in enumerate(initialisations):
+        for additional_length_index, additional_length in enumerate(additional_lengths):
+            weight_norm = array_of_layer_2_weight_norm[additional_length_index, :, :, init_index]
+
+            # Get average weight norm
+            avg_weight_norm = np.mean(weight_norm, axis=1)
+
+            # Get std of weight norm
+            std_weight_norm = np.std(weight_norm, axis=1)
+
+            weight_norm_2_avg_over_init_length_and_dataset[init_index, additional_length_index, :] = avg_weight_norm
+            weight_norm_2_std_over_init_length_and_dataset[init_index, additional_length_index, :] = std_weight_norm
+
+    # Plot additional length v weight norm for both layers with different lines for different initialisations
+
+    plt.figure(figsize=(10, 6))
+
+    for init_index, init in enumerate(initialisations):
+        for dataset_index, dataset in enumerate(datasets_to_test):
+            if dataset_index == 0:
+                plt.errorbar(additional_lengths, weight_norm_1_avg_over_init_length_and_dataset[init_index, :, dataset_index], yerr=weight_norm_1_std_over_init_length_and_dataset[init_index, :, dataset_index], fmt="o", label=f"Initialisation: {init}", capsize=5, color=six_random_colours[init_index])
+            else:
+                plt.errorbar(additional_lengths, weight_norm_1_avg_over_init_length_and_dataset[init_index, :, dataset_index], yerr=weight_norm_1_std_over_init_length_and_dataset[init_index, :, dataset_index], fmt="o", capsize=5, color=six_random_colours[init_index])
+
+    # Also plot linear regression of the weight norm for each init_index
+
+    for init_index, init in enumerate(initialisations):
+        y = np.mean(weight_norm_1_avg_over_init_length_and_dataset[init_index, :, :], axis=1)
+        yerr = np.mean(weight_norm_1_std_over_init_length_and_dataset[init_index, :, :], axis=1) / y
+
+        coefficients = np.polyfit(additional_lengths, y, 1)
+
+        a = coefficients[0]
+        b = coefficients[1]
+
+        x = np.linspace(min(additional_lengths), max(additional_lengths), 500)
+
+        y = a * x + b
+
+        plt.plot(x, y, "-", color=six_random_colours[init_index])
+
+    plt.xlabel("Additional Length")
+    plt.ylabel("Difference in Weight Norm")
+
+    plt.legend(loc="best")
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+
+    plt.savefig(
+        "experiments/grokking_via_concealment_with_initialisation/weight_norm_1_vs_length.pdf",
+        bbox_inches="tight",
+    )
+
+    plt.figure(figsize=(10, 6))
+
+    for init_index, init in enumerate(initialisations):
+        for dataset_index, dataset in enumerate(datasets_to_test):
+            if dataset_index == 0:
+                plt.errorbar(additional_lengths, weight_norm_2_avg_over_init_length_and_dataset[init_index, :, dataset_index], yerr=weight_norm_2_std_over_init_length_and_dataset[init_index, :, dataset_index], fmt="o", label=f"Initialisation: {init}", capsize=5, color=six_random_colours[init_index])
+            else:
+                plt.errorbar(additional_lengths, weight_norm_2_avg_over_init_length_and_dataset[init_index, :, dataset_index], yerr=weight_norm_2_std_over_init_length_and_dataset[init_index, :, dataset_index], fmt="o", capsize=5, color=six_random_colours[init_index])
+    
+    # Same linear regression for second layer
+
+    for init_index, init in enumerate(initialisations):
+        y = np.mean(weight_norm_2_avg_over_init_length_and_dataset[init_index, :, :], axis=1)
+        yerr = np.mean(weight_norm_2_std_over_init_length_and_dataset[init_index, :, :], axis=1) / y
+
+        coefficients = np.polyfit(additional_lengths, y, 1)
+
+        a = coefficients[0]
+        b = coefficients[1]
+
+        x = np.linspace(min(additional_lengths), max(additional_lengths), 500)
+
+        y = a * x + b
+
+        plt.plot(x, y, "-", color=six_random_colours[init_index])
+
+    plt.xlabel("Additional Length")
+    plt.ylabel("Difference in Weight Norm")
+
+    plt.legend(loc="best")
+
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+
+    plt.savefig(
+        "experiments/grokking_via_concealment_with_initialisation/weight_norm_2_vs_length.pdf",
+        bbox_inches="tight",
+    )
+    
+
+
+
+
+
 
 
 def experiment_grokking_plain_gp_regression():
