@@ -40,6 +40,7 @@ from src.dataset import (
     NoisySineWaveTask,
     combine_datasets,
     generate_zero_one_classification,
+    generate_split_modulo_addition_task
 )
 from src.model import (
     ExactGPModel,
@@ -70,6 +71,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import pickle
 import copy
+from matplotlib import cm
 
 
 def experiment_grokking_plain():
@@ -3632,6 +3634,228 @@ def experiment_spheres_around_optimal_solution():
         )
 
 
+def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
+    """
+    What's the relationship between the sharpness of the loss function and the grokking gap?
+    """
+
+    experiment_path = Path("experiments/sharpness_and_grokking_gap/")
+    cache_path = experiment_path / "cache"
+
+    os.makedirs(experiment_path, exist_ok=True)
+    os.makedirs(cache_path, exist_ok=True)
+
+    weight_decay = 1e-2
+    learning_rate = 1e-2
+    batch_size = 32
+    output_size = 2
+    k = 3
+    hidden_size = 1000
+    epochs = 3000
+    number_training_samples = 750
+    number_validation_samples = 250
+
+    threshold = 0.99
+
+    random_seeds = [0, 1, 2]
+
+    all_training_indices = []
+    grokking_gaps = []
+    relative_grokking_gaps = []
+    training_sharpness = []
+    validation_sharpness = []
+
+    epochs_to_go_back = 300
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    for input_size in input_sizes:
+
+        for random_seed in random_seeds:
+
+            entire_dataset = ParityTask(
+                sequence_length=k,
+                num_samples=number_training_samples + number_validation_samples,
+                random_seed=random_seed,
+            )
+
+            if random_seed == 0:
+                cache_file = cache_path / f"results_{input_size}.pkl"
+            else:
+                cache_file = cache_path / f"results_{input_size}_{random_seed}.pkl"
+
+            if cache_file.exists():
+                with open(cache_file, 'rb') as f:
+                    cached_result = pickle.load(f)
+                    training_index, validation_index, training_sharpness_value, validation_sharpness_value, training_losses, validation_losses, training_accuracy, validation_accuracy = cached_result
+
+                rate_of_change_in_training_loss = np.diff(training_losses)
+                rate_of_change_in_validation_loss = np.diff(validation_losses)
+
+                training_sharpness_value = np.mean(rate_of_change_in_training_loss[training_index-epochs_to_go_back:training_index])
+                validation_sharpness_value = np.mean(rate_of_change_in_validation_loss[validation_index-epochs_to_go_back:validation_index])
+            else:
+                hidden_dataset = HiddenDataset(
+                    dataset=entire_dataset,
+                    total_length=input_size,
+                    random_seed=random_seed,
+                )
+
+                training_dataset, validation_dataset = torch.utils.data.random_split(
+                    hidden_dataset,
+                    [number_training_samples, number_validation_samples],
+                )
+
+                model = TinyModel(
+                    input_size=input_size,
+                    hidden_layer_size=hidden_size,
+                    output_size=output_size,
+                    random_seed=random_seed,
+                )
+                
+                (model, observer) = train_model(
+                    training_dataset=training_dataset,
+                    validation_dataset=validation_dataset,
+                    model=model,
+                    learning_rate=learning_rate,
+                    weight_decay=weight_decay,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    loss_function_label="cross-entropy",
+                    optimiser_function_label="sgd",
+                    progress_bar=True,
+                    observer=None,
+                )
+
+                training_accuracy = np.array(observer.training_accuracy)
+                validation_accuracy = np.array(observer.validation_accuracy)
+
+                training_index = np.where(training_accuracy > threshold)[0][0]
+                validation_index = np.where(validation_accuracy > threshold)[0][0]
+
+                training_losses = np.array(observer.training_losses)
+                validation_losses = np.array(observer.validation_losses)
+
+                rate_of_change_in_training_loss = np.diff(training_losses)
+                rate_of_change_in_validation_loss = np.diff(validation_losses)
+
+                training_sharpness_value = np.mean(rate_of_change_in_training_loss[training_index-200:training_index])
+                validation_sharpness_value = np.mean(rate_of_change_in_validation_loss[validation_index-200:validation_index])
+
+                # Cache the results for this input size
+                with open(cache_file, 'wb') as f:
+                    pickle.dump((training_index, validation_index, training_sharpness_value, validation_sharpness_value, training_losses, validation_losses, training_accuracy, validation_accuracy), f)
+
+                observer.plot_me(path=experiment_path / Path(f"model_{input_size}_{random_seed}"), log=False)
+
+            grokking_gaps.append(validation_index - training_index)
+            training_sharpness.append(training_sharpness_value)
+            validation_sharpness.append(validation_sharpness_value)
+            relative_grokking_gap = (validation_index - training_index) / training_index
+            relative_grokking_gaps.append(relative_grokking_gap)
+            all_training_indices.append(training_index)
+
+            print(f"Training index: {training_index}")
+            print(f"Validation index: {validation_index}")
+            print(f"Grokking gap: {validation_index - training_index}")
+            print(f"Relative grokking gap: {relative_grokking_gap}")
+            print(f"Training sharpness: {training_sharpness_value}")
+            print(f"Validation sharpness: {validation_sharpness_value}")
+            
+
+    # Plot the relationship between training and validation sharpness ratio to grokking gap
+    plt.figure(figsize=(8, 6), dpi=300)
+
+    training_indices_normalized = np.array(all_training_indices)
+    norm = plt.Normalize(training_indices_normalized.min(), training_indices_normalized.max())
+
+    cmap = cm.viridis 
+
+    ratio_of_val_to_train_sharpness = np.array(validation_sharpness) / np.array(training_sharpness)
+
+    plt.scatter(relative_grokking_gaps, ratio_of_val_to_train_sharpness, c=cmap(norm(training_indices_normalized)))
+
+    # Incldue camp on the right
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    plt.colorbar(sm, label="Training Index")
+
+    # Complete linear regression using polyfit
+    slope, intercept = np.polyfit(relative_grokking_gaps, ratio_of_val_to_train_sharpness, 1)
+
+    # Get pearson correlation coefficient
+    pearson_correlation_coefficient, p = pearsonr(relative_grokking_gaps, ratio_of_val_to_train_sharpness)
+    print(f"\nTrend between relative grokking gap and ratio of validation to training sharpness: {slope:.2f}x + {intercept:.2f}")
+    print(f"p-value: {p}")
+    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
+
+    # Get pearson correlation coefficient with training index
+    pearson_correlation_coefficient, p = pearsonr(all_training_indices, ratio_of_val_to_train_sharpness)
+    print(f"Trend between training index and ratio of sharpness")
+    print(f"p-value: {p}")
+    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}")
+
+    plt.plot(relative_grokking_gaps, slope * np.array(relative_grokking_gaps) + intercept, color='black', label=f"Linear Regression: {slope:.2f}x + {intercept:.2f}")
+
+    plt.xlabel("Relative Grokking Gap")
+    plt.ylabel("Ratio of Validation to Training Sharpness")
+    plt.legend()
+
+    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap.png"), bbox_inches="tight")
+
+
+def experiment_split_modulo_addition():
+    """
+    Split modulo addition.
+    """
+
+    experiment_path = Path("experiments/split_modulo_addition/")
+    os.makedirs(experiment_path, exist_ok=True)
+
+    weight_decay = 1e-3
+    learning_rate = 1e-2
+    batch_size = 16
+    hidden_size = 1000
+    epochs = 3000
+    fraction = 0.8
+    prime = 9
+
+    random_seed = 0
+
+    train_dataest, val_dataset = generate_split_modulo_addition_task(data_fraction=fraction, random_seed=random_seed, modulo=prime)
+
+    print(f"Training dataset size: {len(train_dataest)}")
+    print(f"Validation dataset size: {len(val_dataset)}")
+
+    example = train_dataest[0]
+    print(f"Example input: {example[0]}")
+    print(f"Example target: {example[1]}")
+
+    model = TinyModel(
+        input_size=2*prime,
+        hidden_layer_size=hidden_size,
+        output_size=prime,
+        random_seed=random_seed,
+    )
+
+    (model, observer) = train_model(
+        training_dataset=train_dataest,
+        validation_dataset=val_dataset,
+        model=model,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        epochs=epochs,
+        batch_size=batch_size,
+        loss_function_label="mse",
+        optimiser_function_label="sgd",
+        progress_bar=True,
+        observer=None,
+    )
+
+    observer.plot_me(path=Path("experiments/split_modulo_addition/"), log=False)
+
+
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
 
@@ -3717,8 +3941,17 @@ if __name__ == "__main__":
         "--experiments", type=str, nargs="+", default=[], help="Experiments to run"
     )
 
+    argparser.add_argument(
+        "--addition_dims_for_sharpnesss", type=int, nargs="+", default=[],
+    )
+
     args = argparser.parse_args()
 
     for experiment_name in args.experiments:
-        os.makedirs("experiments/experiment_name/", exist_ok=True)
-        eval("experiment_{}()".format(experiment_name))
+        os.makedirs(f"experiments/{experiment_name}/", exist_ok=True)
+        
+        if experiment_name == "sharpness_and_grokking_gap" and len(args.addition_dims_for_sharpnesss) > 0:
+            print(f"Running experiment {experiment_name} with addition dims {args.addition_dims_for_sharpnesss}")
+            experiment_sharpness_and_grokking_gap(input_sizes=args.addition_dims_for_sharpnesss)
+        else:
+            eval("experiment_{}()".format(experiment_name))

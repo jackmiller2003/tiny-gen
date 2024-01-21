@@ -214,6 +214,62 @@ class ModuloAdditionTask(Dataset):
         return "ModuloAdditionTask"
 
 
+class SelectedModuloAdditionTask(Dataset):
+    """
+    The modulo addition task takes in binary sequences and provides
+    the modulo addition of the sequence as the target.
+    """
+
+    def __init__(self, modulo: int, pairs: list) -> None:
+        self.modulo = modulo
+        self.pairs = pairs
+
+        self._generate_data()
+
+    def _generate_data(self) -> None:
+        """
+        Generates the data for the modulo addition task.
+
+        The input data should be a sequence of lenght 2*modulo
+        representing a and b in the equation
+        a+b = c (mod modulo)
+
+        Here a and b are one hot encoded.
+        """
+
+        self.data = []
+        self.targets = []
+
+        for pair in self.pairs:
+            a = pair[0]
+            b = pair[1]
+
+            c = (a + b) % self.modulo
+
+            a_zeros = torch.zeros(self.modulo)
+            b_zeros = torch.zeros(self.modulo)
+
+            a_zeros[a] = 1
+            b_zeros[b] = 1
+
+            self.data.append(torch.cat((a_zeros, b_zeros)))
+
+            c_zeros = torch.zeros(self.modulo)
+
+            c_zeros[c] = 1
+
+            self.targets.append(c_zeros)
+
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.data[idx], self.targets[idx]
+
+    def __name__(self) -> str:
+        return "SelectedModuloAdditionTask"
+
 """
 Choosing 5 random datasets from appendix A1.1 inside https://arxiv.org/abs/2201.02177.
 
@@ -727,3 +783,35 @@ def generate_zero_one_classification(device: Any, seed:int):
     y_valid = y_valid.to(device)
 
     return x_train, y_train, x_valid, y_valid
+
+
+def generate_split_modulo_addition_task(data_fraction=0.4, modulo=13, random_seed=0):
+    """
+    Generates modulo addition taks where train and val are disjoint with
+    data fraction of the data being used for training.
+    """
+
+    # Generate all possible pairs modulo p
+
+    pairs = []
+
+    for i in range(modulo):
+        for j in range(modulo):
+            pairs.append((i, j))
+
+    # Shuffle the pairs
+    
+    random.seed(random_seed)
+
+    random.shuffle(pairs)
+
+    # Split the pairs into train and val
+
+    train_pairs = pairs[:int(data_fraction * len(pairs))]
+    val_pairs = pairs[int(data_fraction * len(pairs)):]
+
+    # Generate the datasets
+    train_dataset = SelectedModuloAdditionTask(modulo, train_pairs)
+    val_dataset = SelectedModuloAdditionTask(modulo, val_pairs)
+
+    return train_dataset, val_dataset
