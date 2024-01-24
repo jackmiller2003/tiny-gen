@@ -72,6 +72,7 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 import copy
 from matplotlib import cm
+from scipy.ndimage import gaussian_filter1d
 
 
 def experiment_grokking_plain():
@@ -3758,6 +3759,10 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
 
             training_accuracy_deriv = np.diff(training_accuracy)
             validation_accuracy_deriv = np.diff(validation_accuracy)
+
+            # Smooth out both derivatives. Level of smoothing changes p-values. Should discuss this.
+            training_accuracy_deriv = gaussian_filter1d(training_accuracy_deriv, sigma=10)
+            validation_accuracy_deriv = gaussian_filter1d(validation_accuracy_deriv, sigma=10)
 
             max_deriv_validation_accuracy_point = np.argmax(validation_accuracy_deriv)
             max_deriv_validation_accuracy = validation_accuracy_deriv[max_deriv_validation_accuracy_point]
