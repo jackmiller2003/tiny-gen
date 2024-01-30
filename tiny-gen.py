@@ -3668,7 +3668,6 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
     training_sharpness = []
     validation_sharpness = []
     max_validation_accuracy_deriv = []
-    equiv_training_accuracy_deriv = []
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -3766,16 +3765,8 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
 
             max_deriv_validation_accuracy_point = np.argmax(validation_accuracy_deriv)
             max_deriv_validation_accuracy = validation_accuracy_deriv[max_deriv_validation_accuracy_point]
-            validation_accuracy_deriv_y_value = validation_accuracy[max_deriv_validation_accuracy_point]
-
-
-            # First point at which training accuracy was max validation accuracy point
-            training_index_of_equivalent_accuracy = np.where(training_accuracy > validation_accuracy_deriv_y_value)[0][0]
-            equivalent_training_accuracy_value = training_accuracy_deriv[training_index_of_equivalent_accuracy]
 
             max_validation_accuracy_deriv.append(max_deriv_validation_accuracy)
-            equiv_training_accuracy_deriv.append(equivalent_training_accuracy_value)
-
             grokking_gaps.append(validation_index - training_index)
             training_sharpness.append(training_sharpness_value)
             validation_sharpness.append(validation_sharpness_value)
@@ -3790,11 +3781,14 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
             print(f"Training sharpness: {training_sharpness_value}")
             print(f"Validation sharpness: {validation_sharpness_value}")
             print(f"Max validation accuracy deriv: {max_deriv_validation_accuracy}")
-            print(f"Equivalent training accuracy deriv: {equivalent_training_accuracy_value}")
             
 
     # Plot the relationship between training and validation sharpness ratio to grokking gap
-    plt.figure(figsize=(8, 6), dpi=300)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), dpi=300, gridspec_kw={'width_ratios': [1, 1.3]})
+
+    # Set tick label format to be scientific notation
+    ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 
     training_indices_normalized = np.array(all_training_indices)
     norm = plt.Normalize(training_indices_normalized.min(), training_indices_normalized.max())
@@ -3803,12 +3797,7 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
 
     ratio_of_val_to_train_sharpness = np.array(validation_sharpness) / np.array(training_sharpness)
 
-    plt.scatter(relative_grokking_gaps, ratio_of_val_to_train_sharpness, c=cmap(norm(training_indices_normalized)))
-
-    # Incldue camp on the right
-    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    plt.colorbar(sm, label="Training Index")
+    ax1.scatter(relative_grokking_gaps, ratio_of_val_to_train_sharpness, c=cmap(norm(training_indices_normalized)))
 
     # Complete linear regression using polyfit
     slope, intercept = np.polyfit(relative_grokking_gaps, ratio_of_val_to_train_sharpness, 1)
@@ -3825,35 +3814,50 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
     print(f"p-value: {p}")
     print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}")
 
-    plt.plot(relative_grokking_gaps, slope * np.array(relative_grokking_gaps) + intercept, color='black', label=f"Linear Regression: {slope:.2f}x + {intercept:.2f}")
+    ax1.plot(relative_grokking_gaps, slope * np.array(relative_grokking_gaps) + intercept, color='black', label=f"Regression: {slope:.2f}x + {intercept:.2f}")
 
-    plt.xlabel("Relative Grokking Gap")
-    plt.ylabel("Ratio of Validation to Training Sharpness")
-    plt.legend()
+    ax1.set_xlabel("Relative Grokking Gap")
+    ax1.set_ylabel("Ratio of Validation to Training Sharpness")
+    ax1.legend(loc="upper right")
 
-    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap.png"), bbox_inches="tight")
+    print(f"length of relative grokking gaps: {len(relative_grokking_gaps)}")
+    print(f"length of max validation accuracy deriv: {len(max_validation_accuracy_deriv)}")
 
-    # Plot the relationship with maximum validation accuracy derivative
-    plt.figure(figsize=(8, 6), dpi=300)
+    ax2.scatter(relative_grokking_gaps, max_validation_accuracy_deriv, c=cmap(norm(training_indices_normalized)))
 
-    plt.plot(relative_grokking_gaps, max_validation_accuracy_deriv, 'o')
-    
-    # Complete linear regression
-    slope, intercept = np.polyfit(relative_grokking_gaps, max_validation_accuracy_deriv, 1)
+    log_max_validation_accuracy_deriv = np.log(max_validation_accuracy_deriv)
 
-    # Get pearson correlation coefficient
-    pearson_correlation_coefficient, p = pearsonr(relative_grokking_gaps, max_validation_accuracy_deriv)
-    print(f"\nTrend between relative grokking gap and max validation accuracy derivative: {slope:.2f}x + {intercept:.2f}")
+    # Linear regression on transformed data
+    slope, intercept = np.polyfit(relative_grokking_gaps, log_max_validation_accuracy_deriv, 1)
+
+    # Pearson correlation coefficient with transformed data
+    pearson_correlation_coefficient, p = pearsonr(relative_grokking_gaps, log_max_validation_accuracy_deriv)
+    print(f"\nTrend between relative grokking gap and log(max validation accuracy derivative): {slope:.2f}x + {intercept:.2f}")
     print(f"p-value: {p}")
     print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
 
-    # Plot trend line between 
-    plt.plot(relative_grokking_gaps, slope * np.array(relative_grokking_gaps) + intercept, color='black', label=f"Linear Regression: {slope:.2f}x + {intercept:.2f}")
+    # Pearson correlation coefficient with transformed data
+    pearson_correlation_coefficient_other, p_other = pearsonr(all_training_indices, max_validation_accuracy_deriv)
+    print(f"\nTrend between relative training index and max validation accuracy.")
+    print(f"p-value: {p_other}")
+    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient_other}\n")
 
-    plt.xlabel("Relative Grokking Gap")
-    plt.ylabel("Maximum Validation Accuracy Derivative")
+    # Plot exponential decay trend line on ax2
+    trend_line = np.exp(intercept + slope * np.array(relative_grokking_gaps))
+    ax2.plot(relative_grokking_gaps, trend_line, color='black', label=f"Regression: exp({intercept:.2f} + {slope:.2f}x)")
 
-    plt.savefig(experiment_path / Path("max_validation_accuracy_deriv_and_grokking_gap.pdf"), bbox_inches="tight")
+    # Additional plot settings for ax2
+    ax2.set_xlabel("Relative Grokking Gaps")
+    ax2.set_ylabel("Max Validation Accuracy Derivative")
+    ax2.legend(loc="upper right")
+
+    # Incldue camp on the right
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax2, label="Training Index")
+
+    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap.pdf"), bbox_inches="tight")
+    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap.png"), bbox_inches="tight")
 
 def experiment_split_modulo_addition():
     """
