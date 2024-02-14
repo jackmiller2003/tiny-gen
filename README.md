@@ -1,12 +1,17 @@
 # tiny-gen
 
-This repository contains code for a Toy Model of generalisation to test claims regarding grokking.
+This repository contains code for two papers.
+* _Grokking Beyond Neural Networks_, which is currently under review at Transactions of Machine Learning Research. It can be found here: https://arxiv.org/abs/2310.17247.
+* _Measuring Sharpness in Grokking_, which is currently under review for the workshop Bridging the Gap Between Practice and Theory in Deep Learning. 
 
-## Response to Reviewers for TMLR
+## Running the Repository
 
-Main points:
-* Further analysis of linear regression. PR: https://github.com/jackmiller2003/tiny-gen/pull/9.
-* Further analysis of GP classification. _No PR yet._
-* Further analysis of Section 2.2. _No PR yet._
-* Improving figure 6. _No PR yet._
+All results are produced from the file `tiny-gen.py` by specifying using an argument which experiments one wishes to run. For example, to run the code to generate MLP plots for _Measuring Sharpness in Grokking_, one would use the following command under the branch `feat/sharpness-and-gap`:
 
+```
+python3 tiny-gen.py --experiments sharpness_and_grokking_gap
+```
+
+## Results
+
+There exist several interesting results from the repository. For example, here is the first recorded instance of grokking in GPs under hyperparameter optimisation! ...
