@@ -72,6 +72,7 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 import copy
 from matplotlib import cm
+import matplotlib
 from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import curve_fit
 from scipy.special import erf, erfinv
@@ -3637,18 +3638,18 @@ def experiment_spheres_around_optimal_solution():
         )
 
 
-def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
+def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,46))):
     """
     What's the relationship between the sharpness of the loss function and the grokking gap?
     """
 
+    matplotlib.set_loglevel('ERROR')
+
     font = {
         "family": "normal",
-        # 'weight' : 'bold',
         "size": 14,
     }
 
-    # Set font
     plt.rc("font", **font)
 
     experiment_path = Path("experiments/sharpness_and_grokking_gap/")
@@ -3656,6 +3657,8 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
 
     os.makedirs(experiment_path, exist_ok=True)
     os.makedirs(cache_path, exist_ok=True)
+
+    verbose = False
 
     weight_decay = 1e-2
     learning_rate = 1e-2
@@ -3667,18 +3670,10 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
     number_training_samples = 750
     number_validation_samples = 250
 
-    m_s = 0.2 # how far back relatively to go from the first point of high training accuracy
-
     threshold = 0.99
 
     random_seeds = [0, 1, 2]
 
-    all_training_indices = []
-    grokking_gaps = []
-    relative_grokking_gaps = []
-    training_sharpness = []
-    validation_sharpness = []
-    max_validation_accuracy_deriv = []
     erf_relative_grokking_gaps = []
     max_deriv_with_erf_list = []
     rel_deriv_with_erf_list = []
@@ -3693,12 +3688,14 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
     select_train_ts_for_later_fitting = []
     select_val_ts_for_later_fitting = []
 
-    def error_function_model(x, a, b):
+    def error_function_model(t, s, t_star):
         c = 1/4
         d = 0.75
-        return c*erf(a*(x - b)) + d
+        return c*erf(s*(t - t_star)) + d
 
     for input_size in input_sizes:
+
+        print(f"Running for input size {input_size}")
 
         for random_seed in random_seeds:
 
@@ -3717,14 +3714,6 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
                 with open(cache_file, 'rb') as f:
                     cached_result = pickle.load(f)
                     training_index, validation_index, training_sharpness_value, validation_sharpness_value, training_losses, validation_losses, training_accuracy, validation_accuracy = cached_result
-
-                rate_of_change_in_training_loss = np.diff(training_losses)
-                rate_of_change_in_validation_loss = np.diff(validation_losses)
-
-                epochs_to_go_back = int((1-m_s) * training_index)
-
-                training_sharpness_value = np.mean(rate_of_change_in_training_loss[training_index-epochs_to_go_back:training_index])
-                validation_sharpness_value = np.mean(rate_of_change_in_validation_loss[validation_index-epochs_to_go_back:validation_index])
 
                 # Maximum training accuracy
                 training_accuracy = np.array(training_accuracy)
@@ -3762,6 +3751,9 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
                     observer=None,
                 )
 
+                # Some of these are redundant but are inlcuded in previous cached results
+                # and are thus included for posterity.
+
                 training_accuracy = np.array(observer.training_accuracy)
                 validation_accuracy = np.array(observer.validation_accuracy)
 
@@ -3783,27 +3775,57 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
 
                 observer.plot_me(path=experiment_path / Path(f"model_{input_size}_{random_seed}"), log=False)
 
-            assert training_index < validation_index
+            # Making sure that grokking has occured in every case
+            assert training_accuracy[training_index] >= threshold, f"Training accuracy at index {training_index} is {training_accuracy[training_index]}"
+            assert validation_accuracy[validation_index] >= threshold, f"Validation accuracy at index {validation_index} is {validation_accuracy[validation_index]}"
+            
+            # Making sure that the training index is less than the validation index
+            assert training_index < validation_index, f"Training index {training_index} is greater than validation index {validation_index}"
+            
+            # Making sure that the training index is not at the end of the training accuracy, same for validation.
             assert training_index != 2000-1 and validation_index != 2000-1
             assert training_index != 2000 and validation_index != 2000
             assert training_index != 3000-1 and validation_index != 3000-1
             assert training_index != 3000 and validation_index != 3000
 
             try:
-                popt_training, pcov_training = curve_fit(error_function_model, np.arange(len(training_accuracy)), training_accuracy, p0=[1e-3, 100], maxfev=500)
-                popt_validation, pcov_validation = curve_fit(error_function_model, np.arange(len(validation_accuracy)), validation_accuracy, p0=[1e-3, 100], maxfev=500)
+                popt_training, _ = curve_fit(error_function_model, np.arange(len(training_accuracy)), training_accuracy, p0=[1e-3, 100], maxfev=500)
+                popt_validation, _ = curve_fit(error_function_model, np.arange(len(validation_accuracy)), validation_accuracy, p0=[1e-3, 100], maxfev=500)
             except:
                 print(f"Failed to fit error function model for input size {input_size} and random seed {random_seed}")
                 continue
 
-            print(f"Optimal parameters for training: {popt_training}")
-            print(f"Optimal parameters for validation: {popt_validation}")
+            if verbose:
 
-            erf_relative_grokking_gap = popt_validation[1] / popt_training[1] - 1
+                print(f"Optimal parameters for training: {popt_training}")
+                print(f"Optimal parameters for validation: {popt_validation}")
 
+            s_tr = popt_training[0]
+            t_star_tr = popt_training[1]
+
+            s_gen = popt_validation[0]
+            t_star_gen = popt_validation[1]
+
+            # Assert t_start_tr < t_star_gen
+            assert t_star_tr < t_star_gen, f"t_star_tr: {t_star_tr}, t_star_gen: {t_star_gen}"
+            assert s_tr > 0 and s_gen > 0, f"s_tr: {s_tr}, s_gen: {s_gen}"
+
+            erf_relative_grokking_gap = t_star_gen / t_star_tr - 1
+            max_deriv_validation_accuracy_with_erf = s_gen / (2*np.sqrt(np.pi))
+            relative_deriv_with_erf = s_gen / s_tr
+
+            erf_relative_grokking_gaps.append(erf_relative_grokking_gap)
+            rel_deriv_with_erf_list.append(relative_deriv_with_erf)
+            max_deriv_with_erf_list.append(max_deriv_validation_accuracy_with_erf)
+
+            if verbose:
+                print(f"Relative grokking gap: {erf_relative_grokking_gap}")
+                print(f"Relative deriv with erf: {relative_deriv_with_erf}")
+                print(f"Max deriv with erf: {max_deriv_validation_accuracy_with_erf}")
+
+            # Get random fits for appendix.
             if input_size % 3 == 0 and random_seed == 0:
 
-                # Randomly plot the error function model and the data
                 x_train = np.linspace(0, len(training_accuracy), 100)
                 x_val = np.linspace(0, len(validation_accuracy), 100)
                 y_train = error_function_model(x_train, *popt_training)
@@ -3822,44 +3844,11 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
                 select_validation_accuracies_for_later_fitting.append(validation_accuracy)
 
                 select_input_sizes.append(input_size)
-
-            training_accuracy_deriv = np.diff(training_accuracy)
-            validation_accuracy_deriv = np.diff(validation_accuracy)
-
-            # Smooth out both derivatives. Level of smoothing changes p-values. Should discuss this.
-            training_accuracy_deriv = gaussian_filter1d(training_accuracy_deriv, sigma=10)
-            validation_accuracy_deriv = gaussian_filter1d(validation_accuracy_deriv, sigma=10)
-
-            max_deriv_validation_accuracy_point = np.argmax(validation_accuracy_deriv)
-            max_deriv_validation_accuracy = validation_accuracy_deriv[max_deriv_validation_accuracy_point]
-
-            max_deriv_validation_accuracy_with_erf = popt_validation[0] / (2*np.sqrt(np.pi))
-            relative_deriv_with_erf = popt_validation[0] / popt_training[0]
-
-            rel_deriv_with_erf_list.append(relative_deriv_with_erf)
-            max_deriv_with_erf_list.append(max_deriv_validation_accuracy_with_erf)
-            max_validation_accuracy_deriv.append(max_deriv_validation_accuracy)
-            grokking_gaps.append(validation_index - training_index)
-            training_sharpness.append(training_sharpness_value)
-            validation_sharpness.append(validation_sharpness_value)
-            relative_grokking_gap = (validation_index - training_index) / training_index
-            relative_grokking_gaps.append(relative_grokking_gap)
-            all_training_indices.append(training_index)
-            erf_relative_grokking_gaps.append(erf_relative_grokking_gap)
-
-            print(f"Training index: {training_index}")
-            print(f"Validation index: {validation_index}")
-            print(f"Grokking gap: {validation_index - training_index}")
-            print(f"Relative grokking gap: {relative_grokking_gap}")
-            print(f"Training sharpness: {training_sharpness_value}")
-            print(f"Validation sharpness: {validation_sharpness_value}")
-            print(f"Max validation accuracy deriv: {max_deriv_validation_accuracy}")
-            print(f"Max validation accuracy deriv with erf: {max_deriv_validation_accuracy_with_erf}")
             
 
     # Start by plotting fits.
 
-    fig, axs = plt.subplots(2, 3, figsize=(20, 10))
+    fig, axs = plt.subplots(2, 3, figsize=(20, 10), dpi=300)
 
     for i in range(6):
         ax = axs[i//3, i%3]
@@ -3869,6 +3858,8 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
             ax.plot(select_validation_xs_for_later_fitting[i], select_validation_ys_for_later_fitting[i], label="Validation Fit", color="black", linestyle="dashdot")
             ax.plot(select_train_ts_for_later_fitting[i], select_training_accuracies_for_later_fitting[i], label="Training Accuracy", color="C0")
             ax.plot(select_val_ts_for_later_fitting[i], select_validation_accuracies_for_later_fitting[i], label="Validation Accuracy", color="C1")
+
+            ax.legend()
         else:
             ax.plot(select_training_xs_for_later_fitting[i], select_training_ys_for_later_fitting[i], color="black", linestyle="--")
             ax.plot(select_validation_xs_for_later_fitting[i], select_validation_ys_for_later_fitting[i], color="black", linestyle="dashdot")
@@ -3876,107 +3867,30 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
             ax.plot(select_val_ts_for_later_fitting[i], select_validation_accuracies_for_later_fitting[i], color="C1")
 
         ax.set_title(f"Input Size: {select_input_sizes[i]}")
-        ax.legend()
 
     plt.savefig(experiment_path / Path("erf_fits.pdf"), bbox_inches="tight")
 
+    plt.close()
 
-    relative_grokking_gap_for_trend = np.linspace(np.min(relative_grokking_gaps), np.max(relative_grokking_gaps), 100)
     relative_grokking_gap_for_trend_with_erf = np.linspace(np.min(erf_relative_grokking_gaps), np.max(erf_relative_grokking_gaps), 100)
+
+    plt.rcdefaults()  # Reset to default settings
+
+    matplotlib.set_loglevel('ERROR')
 
     font = {
         "family": "normal",
-        # 'weight' : 'bold',
         "size": 14,
     }
 
-    # Set font
     plt.rc("font", **font)
 
-    # Plot the relationship between training and validation sharpness ratio to grokking gap
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), dpi=300, gridspec_kw={'width_ratios': [1, 1.3]})
+    log_log_plot = False
 
-    # Set tick label format to be scientific notation
-    ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-    ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-
-    training_indices_normalized = np.array(all_training_indices)
-    norm = plt.Normalize(training_indices_normalized.min(), training_indices_normalized.max())
-
-    cmap = cm.viridis 
-
-    ratio_of_val_to_train_sharpness = np.array(validation_sharpness) / np.array(training_sharpness)
-
-    ax1.scatter(relative_grokking_gaps, ratio_of_val_to_train_sharpness, c=cmap(norm(training_indices_normalized)))
-
-    # Complete linear regression using polyfit
-    slope, intercept = np.polyfit(relative_grokking_gaps, ratio_of_val_to_train_sharpness, 1)
-
-    # Get pearson correlation coefficient
-    pearson_correlation_coefficient, p = pearsonr(relative_grokking_gaps, ratio_of_val_to_train_sharpness)
-    print(f"\nTrend between relative grokking gap and ratio of validation to training sharpness: {slope:.2f}x + {intercept:.2f}")
-    print(f"p-value: {p}")
-    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
-
-    # Get pearson correlation coefficient with training index
-    pearson_correlation_coefficient, p = pearsonr(all_training_indices, ratio_of_val_to_train_sharpness)
-    print(f"Trend between training index and ratio of sharpness")
-    print(f"p-value: {p}")
-    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}")
-
-    ax1.plot(relative_grokking_gap_for_trend, slope * np.array(relative_grokking_gap_for_trend) + intercept, color='black', label=f"Regression: {slope:.2f}x + {intercept:.2f}")
-
-    ax1.set_xlabel("Relative Grokking Gap")
-    ax1.set_ylabel("Ratio of Validation to Training Sharpness")
-    ax1.legend(loc="upper right")
-
-    print(f"length of relative grokking gaps: {len(relative_grokking_gaps)}")
-    print(f"length of max validation accuracy deriv: {len(max_validation_accuracy_deriv)}")
-
-    ax2.scatter(relative_grokking_gaps, max_validation_accuracy_deriv, c=cmap(norm(training_indices_normalized)))
-
-    log_max_validation_accuracy_deriv = np.log(max_validation_accuracy_deriv)
-
-    # Linear regression on transformed data
-    slope, intercept = np.polyfit(relative_grokking_gaps, log_max_validation_accuracy_deriv, 1)
-
-    # Pearson correlation coefficient with transformed data
-    pearson_correlation_coefficient, p = pearsonr(relative_grokking_gaps, log_max_validation_accuracy_deriv)
-    print(f"\nTrend between relative grokking gap and log(max validation accuracy derivative): {slope:.2f}x + {intercept:.2f}")
-    print(f"p-value: {p}")
-    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
-
-    # Pearson correlation coefficient with transformed data
-    pearson_correlation_coefficient_other, p_other = pearsonr(all_training_indices, max_validation_accuracy_deriv)
-    print(f"\nTrend between relative training index and max validation accuracy.")
-    print(f"p-value: {p_other}")
-    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient_other}\n")
-
-    # Plot exponential decay trend line on ax2
-    trend_line = np.exp(intercept + slope * np.array(relative_grokking_gap_for_trend))
-    ax2.plot(relative_grokking_gap_for_trend, trend_line, color='black', label=f"Regression: exp({intercept:.2f} + {slope:.2f}x)")
-
-    # Additional plot settings for ax2
-    ax2.set_xlabel("Relative Grokking Gaps")
-    ax2.set_ylabel("Max Validation Accuracy Derivative")
-    ax2.legend(loc="upper right")
-
-    # Incldue camp on the right
-    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    fig.colorbar(sm, ax=ax2, label="Training Index")
-
-    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap.pdf"), bbox_inches="tight")
-    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap.png"), bbox_inches="tight")
-
-    ax1.clear()
-    ax2.clear()
-
-    plt.clf()
-
-    # Plot
-    #  the relationship between training and validation sharpness ratio to grokking gap
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 9), dpi=300)
+    if log_log_plot:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 6), dpi=300)
+    else:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), dpi=300)
 
     # Set tick label format to be scientific notation
     ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
@@ -3984,65 +3898,74 @@ def experiment_sharpness_and_grokking_gap(input_sizes=list(range(25,45))):
 
     rel_deriv_with_erf_list = np.array(rel_deriv_with_erf_list)
 
-    print(f"list of relative derivatives with erf: {rel_deriv_with_erf_list}")
-    print(f"Erf grokking gaps: {erf_relative_grokking_gaps}")
-
     ax1.scatter(erf_relative_grokking_gaps, rel_deriv_with_erf_list)
     
     # Complete linear regression in log space
     
-    log_erf_fit_derivative_ratio = np.log(rel_deriv_with_erf_list)
-    log_erf_relative_grokking_gaps = np.log(erf_relative_grokking_gaps)
+    if log_log_plot:
+        log_erf_fit_derivative_ratio = np.log(rel_deriv_with_erf_list)
+        log_erf_relative_grokking_gaps = np.log(erf_relative_grokking_gaps)
 
-    slope, intercept = np.polyfit(log_erf_relative_grokking_gaps, log_erf_fit_derivative_ratio, 1)
+        slope, intercept = np.polyfit(log_erf_relative_grokking_gaps, log_erf_fit_derivative_ratio, 1)
 
-    # Get pearson correlation coefficient
-    pearson_correlation_coefficient, p = pearsonr(erf_relative_grokking_gaps, log_erf_fit_derivative_ratio)
+        # Get pearson correlation coefficient
+        pearson_correlation_coefficient, p = pearsonr(erf_relative_grokking_gaps, log_erf_fit_derivative_ratio)
 
-    print(f"\nTrend between relative grokking gap and ratio of validation to training sharpness: {slope:.2f}x + {intercept:.2f}")
-    print(f"Slope: {slope}, intercept: {intercept}")
-    print(f"p-value: {p}")
-    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
+        print(f"\nTrend between relative grokking gap and ratio of validation to training sharpness: {slope:.2f}x + {intercept:.2f}")
+        print(f"Slope: {slope}, intercept: {intercept}")
+        print(f"p-value: {p}")
+        print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
 
-    trend_line = np.exp(intercept) * np.array(relative_grokking_gap_for_trend_with_erf)**slope
+        trend_line = np.exp(intercept) * np.array(relative_grokking_gap_for_trend_with_erf)**slope
 
-    # Plot the trend line on the log-log scale plot
-    ax1.plot(relative_grokking_gap_for_trend_with_erf, trend_line, color='black', label=f"Regression: exp({intercept:.2f}) * x^{slope:.2f}")
+        # Plot the trend line on the log-log scale plot
+        ax1.plot(relative_grokking_gap_for_trend_with_erf, trend_line, color='black', label=f"Regression: exp({intercept:.2f}) * x^{slope:.2f}")
 
-    ax1.set_xlabel("Relative Grokking Gaps")
-    ax1.set_ylabel("Ratio of Validation to Training Derivatives")
-    ax1.set_xscale("log")
-    ax1.set_yscale("log")
-    ax1.legend(loc="upper right")
+    ax1.set_xlabel("Relative Grokking Gap")
+    ax1.set_ylabel("Measure Value")
+    ax1.set_title("Relative Sharpness")
+    
+    if log_log_plot:
+        ax1.set_xscale("log")
+        ax1.set_yscale("log")
+    
+        ax1.legend(loc="upper right")
 
     ax2.scatter(erf_relative_grokking_gaps, max_deriv_with_erf_list)
 
-    log_max_deriv_with_erf_list = np.log(max_deriv_with_erf_list)
+    if log_log_plot:
 
-    # Linear regression on transformed data
-    slope, intercept = np.polyfit(log_erf_relative_grokking_gaps, log_max_deriv_with_erf_list, 1)
+        log_max_deriv_with_erf_list = np.log(max_deriv_with_erf_list)
 
-    # Pearson correlation coefficient with transformed data
-    pearson_correlation_coefficient, p = pearsonr(erf_relative_grokking_gaps, log_max_deriv_with_erf_list)
-    print(f"\nTrend between relative grokking gap and log(max validation accuracy derivative): {slope:.2f}x + {intercept:.2f}")
-    print(f"Slope: {slope}, intercept: {intercept}")
-    print(f"p-value: {p}")
-    print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
+        # Linear regression on transformed data
+        slope, intercept = np.polyfit(log_erf_relative_grokking_gaps, log_max_deriv_with_erf_list, 1)
 
-    trend_line = np.exp(intercept) * np.array(relative_grokking_gap_for_trend_with_erf)**slope
+        # Pearson correlation coefficient with transformed data
+        pearson_correlation_coefficient, p = pearsonr(erf_relative_grokking_gaps, log_max_deriv_with_erf_list)
+        print(f"\nTrend between relative grokking gap and log(max validation accuracy derivative): {slope:.2f}x + {intercept:.2f}")
+        print(f"Slope: {slope}, intercept: {intercept}")
+        print(f"p-value: {p}")
+        print(f"Pearson correlation coefficient: {pearson_correlation_coefficient}\n")
 
-    # Plot the trend line on the log-log scale plot
-    ax2.plot(relative_grokking_gap_for_trend_with_erf, trend_line, color='black', label=f"Regression: exp({intercept:.2f}) * x^{slope:.2f}")
+        trend_line = np.exp(intercept) * np.array(relative_grokking_gap_for_trend_with_erf)**slope
+
+        # Plot the trend line on the log-log scale plot
+        ax2.plot(relative_grokking_gap_for_trend_with_erf, trend_line, color='black', label=f"Regression: exp({intercept:.2f}) * x^{slope:.2f}")
 
     # Additional plot settings for ax2
-    ax2.set_xlabel("Relative Grokking Gaps")
-    ax2.set_ylabel("Max Validation Accuracy Derivative")
-    ax2.set_xscale("log")
-    ax2.set_yscale("log")
-    ax2.legend(loc="upper right")
+    ax2.set_xlabel("Relative Grokking Gap")
+    ax2.set_title("Absolute Sharpness")
+    
+    if log_log_plot:
+        ax2.set_xscale("log")
+        ax2.set_yscale("log")
+    
+        ax2.legend(loc="upper right")
 
-    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap_with_erf_log.pdf"), bbox_inches="tight")
-    plt.savefig(experiment_path / Path("sharpness_and_grokking_gap_with_erf_log.png"), bbox_inches="tight") 
+    if log_log_plot:
+        plt.savefig(experiment_path / Path("sharpness_and_grokking_gap_with_erf_log_log.pdf"), bbox_inches="tight")
+    else:
+        plt.savefig(experiment_path / Path("sharpness_and_grokking_gap_with_erf.pdf"), bbox_inches="tight")
 
 
 def experiment_split_modulo_addition():
