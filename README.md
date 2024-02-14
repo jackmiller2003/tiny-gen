@@ -20,4 +20,10 @@ python3 tiny-gen.py --experiments sharpness_and_grokking_gap
 
 ## Results
 
-There exist several interesting results from the repository. For example, here is the first recorded instance of grokking in GPs under hyperparameter optimisation! ...
+There exist several interesting results from the repository. For example, here is the first recorded instance of grokking in GPs under hyperparameter optimisation!
+
+![image of grokking in GPs](images/gp.png)
+
+Alternatively, here are some trends in sharpness with relative grokking gap in an MLP completing the parity prediction problem.
+
+![image of sharpness](images/sharpness.png)
