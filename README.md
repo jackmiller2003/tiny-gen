@@ -6,7 +6,13 @@ This repository contains code for two papers.
 
 ## Running the Repository
 
-All results are produced from the file `tiny-gen.py` by specifying using an argument which experiments one wishes to run. For example, to run the code to generate MLP plots for _Measuring Sharpness in Grokking_, one would use the following command under the branch `feat/sharpness-and-gap`:
+All results are produced from the file `tiny-gen.py` by specifying using an argument which experiments one wishes to run.
+
+```
+python3 tiny-gen.py --experiments [experiments]
+```
+
+For example, to run the code to generate MLP plots for _Measuring Sharpness in Grokking_, one would use the following command under the branch `feat/sharpness-and-gap`:
 
 ```
 python3 tiny-gen.py --experiments sharpness_and_grokking_gap
