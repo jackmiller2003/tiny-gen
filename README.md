@@ -2,7 +2,7 @@
 
 This repository contains code for two papers.
 * _Grokking Beyond Neural Networks_, which is currently under review at Transactions of Machine Learning Research. It can be found here: https://arxiv.org/abs/2310.17247.
-* _Measuring Sharpness in Grokking_, which is currently under review for the workshop Bridging the Gap Between Practice and Theory in Deep Learning. 
+* _Measuring Sharpness in Grokking_, which is currently under review for the workshop Bridging the Gap Between Practice and Theory in Deep Learning. It can be found here: https://arxiv.org/pdf/2402.08946.pdf.
 
 ## Running the Repository
 
