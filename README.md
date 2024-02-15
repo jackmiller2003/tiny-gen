@@ -18,6 +18,13 @@ For example, to run the code to generate MLP plots for _Measuring Sharpness in G
 python3 tiny-gen.py --experiments sharpness_and_grokking_gap
 ```
 
+## Environment
+
+Concerning the environment, the repository is setup for the Gadi cluster at NCI. If you are using that facility, run `module load pytorch/1.10.0`. This should set the correct Python and PyTorch versions, however, smaller libraries like `tqdm` need to be installed manually through the following command (after enabling the module):
+```
+python3 -m pip install [package_name] --user
+```
+
 ## Results
 
 There exist several interesting results from the repository. For example, here is the first recorded instance of grokking in GPs under hyperparameter optimisation!
